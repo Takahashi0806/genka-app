@@ -126,39 +126,17 @@ export default function App() {
     is_active: String(x?.is_active ?? "true"),
   });
 
-  const [screen, setScreen] = useState("site");
-  const [sites, setSites] = useState([]);
-  const [siteCreatorsMap, setSiteCreatorsMap] = useState({});
-  const [workLogs, setWorkLogs] = useState([]);
-  const [materials, setMaterials] = useState([]);
-  const [selectedSiteId, setSelectedSiteId] = useState("");
-  const [commonCreator, setCommonCreator] = useState("");
-
-  const [siteName, setSiteName] = useState("");
-  const [sitePerson, setSitePerson] = useState("");
-  const [editingSiteId, setEditingSiteId] = useState("");
-
-  const [newCreatorName, setNewCreatorName] = useState("");
-
-  const [workDate, setWorkDate] = useState(today());
-  const [workHours, setWorkHours] = useState("");
-  const [editingWorkId, setEditingWorkId] = useState("");
-
-  const [materialDate, setMaterialDate] = useState(today());
-  const [materialName, setMaterialName] = useState("");
-  const [materialThickness, setMaterialThickness] = useState("");
-  const [materialSize, setMaterialSize] = useState("");
-  const [materialQty, setMaterialQty] = useState("");
-  const [editingMaterialId, setEditingMaterialId] = useState("");
-
-  const [selectedMonth, setSelectedMonth] = useState(thisMonth());
-
-  const [serverInvoiceRows, setServerInvoiceRows] = useState([]);
-  const [serverInvoiceTotals, setServerInvoiceTotals] = useState({
-    work_amount: 0,
-    material_amount: 0,
-    total_amount: 0,
-  });
+  const [screen, setScreen] = useState(() => {
+  const navEntry = performance.getEntriesByType("navigation")[0];
+  const isReload = navEntry?.type === "reload";
+  if (isReload) {
+    return sessionStorage.getItem("screen") || "site";
+  }
+  return "site";
+});
+useEffect(() => {
+  sessionStorage.setItem("screen", screen);
+}, [screen]);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState("");
 
@@ -608,13 +586,8 @@ const nextCreator =
 
 setCommonCreator(nextCreator);
 
-if (nextSiteId && nextCreator) {
-  setScreen("work");
-} else if (nextSiteId) {
-  setScreen("creator");
-} else {
-  setScreen("site");
-}
+setSelectedSiteId(nextSiteId);
+setCommonCreator(nextCreator);
 
         await flushQueue();
       } catch (e) {
@@ -1393,7 +1366,9 @@ async function deleteCreator(siteId, creator) {
         .ga-table th { background:#f8fafc; }
         .ga-card-button { width:100%; text-align:left; background:#fff; border:1px solid #dbe3ee; border-radius:14px; padding:14px; cursor:pointer; }
         .ga-card-button.active { border:2px solid #2f6fec; background:#f5f9ff; }
-        @media (max-width:980px){ .ga-grid-2,.ga-grid-3,.ga-grid-4,.ga-grid-5{ grid-template-columns:1fr; } }
+        @media (max-width:980px){
+  .ga-grid-3,.ga-grid-4,.ga-grid-5{ grid-template-columns:1fr; }
+}
       `}</style>
 
       <div style={{ ...cardStyle, marginBottom: 16, padding: 14 }}>
@@ -1409,16 +1384,33 @@ async function deleteCreator(siteId, creator) {
           <div
             style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
           >
-            <button style={buttonStyle} className="ga-btn-secondary" onClick={movePrev}>
-              ←
-            </button>
-            <button style={buttonStyle} className="ga-btn-secondary" onClick={moveNext}>
-              →
-            </button>
-            <span className="ga-pill">画面: {screen}</span>
-            {selectedSite && <span className="ga-pill">現場: {selectedSite.name}</span>}
-            {commonCreator && <span className="ga-pill">制作者: {commonCreator}</span>}
-            <span className="ga-pill">{syncing ? "同期中" : "待機中"}</span>
+            <button
+  style={{
+    ...buttonStyle,
+    fontSize: 28,
+    padding: "6px 14px",
+    minWidth: 52,
+    lineHeight: 1,
+  }}
+  className="ga-btn-secondary"
+  onClick={movePrev}
+>
+  ←
+</button>
+
+<button
+  style={{
+    ...buttonStyle,
+    fontSize: 28,
+    padding: "6px 14px",
+    minWidth: 52,
+    lineHeight: 1,
+  }}
+  className="ga-btn-secondary"
+  onClick={moveNext}
+>
+  →
+</button>
           </div>
           {message ? (
             <div style={{ fontWeight: 700, color: "#2457c5" }}>{message}</div>
@@ -1430,7 +1422,15 @@ async function deleteCreator(siteId, creator) {
         <>
           <div style={cardStyle}>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>1. 現場登録</h2>
-            <div className="ga-grid-3" style={{ marginTop: 14 }}>
+            <div
+  style={{
+    marginTop: 14,
+    display: "grid",
+    gridTemplateColumns: "1.6fr 1fr auto",
+    gap: 10,
+    alignItems: "end",
+  }}
+>
               <div>
                 <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>現場名</div>
                 <input
@@ -1454,7 +1454,7 @@ async function deleteCreator(siteId, creator) {
                   ))}
                 </select>
               </div>
-              <div style={{ display: "flex", alignItems: "end", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "end", gap: 8, whiteSpace: "nowrap" }}>
                 <button style={buttonStyle} className="ga-btn-primary" onClick={saveSite}>
                   {editingSiteId ? "現場更新" : "現場登録"}
                 </button>
@@ -1688,10 +1688,7 @@ async function deleteCreator(siteId, creator) {
             <div style={{ marginTop: 14, color: "#6b7280" }}>先に現場を選んでください</div>
           ) : (
             <>
-              <div className="ga-grid-4" style={{ marginTop: 14 }}>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>現場名</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>{selectedSite.name}</div>
+              
                 </div>
                 <div className="ga-kpi">
                   <div style={{ fontSize: 12, color: "#6b7280" }}>担当者</div>
@@ -1714,27 +1711,27 @@ async function deleteCreator(siteId, creator) {
                 </div>
               </div>
 
-              <div className="ga-grid-4" style={{ marginTop: 12 }}>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>作業件数</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {fmt(creatorWorkLogs.length)}件
-                  </div>
-                </div>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>材料件数</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {fmt(creatorMaterials.length)}件
-                  </div>
-                </div>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>月内の作業時間合計</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {fmt(monthWorkHours)}時間
-                  </div>
-                </div>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>月内の材料枚数合計</div>
+              <div
+  style={{
+    marginTop: 14,
+    display: "flex",
+    gap: 14,
+    alignItems: "center",
+    flexWrap: "wrap",
+    fontSize: 14,
+    fontWeight: 700,
+  }}
+>
+  <span>現場名: {selectedSite.name}</span>
+  <span>担当者: {selectedSite.person}</span>
+  <span>制作者: {commonCreator || "未選択"}</span>
+  <input
+    style={{ ...inputStyle, width: 140 }}
+    type="month"
+    value={selectedMonth}
+    onChange={(e) => setSelectedMonth(e.target.value)}
+  />
+</div>
                   <div style={{ marginTop: 6, fontWeight: 800 }}>
                     {fmt(monthMaterialQty)}枚
                   </div>
@@ -1744,9 +1741,15 @@ async function deleteCreator(siteId, creator) {
               <div className="ga-grid-2" style={{ marginTop: 16 }}>
                 <div style={{ ...cardStyle, padding: 14, background: "#f8fbff" }}>
                   <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
-                    作業追加フォーム
+                    作業登録
                   </div>
-                  <div className="ga-grid-3">
+                  <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gap: 10,
+  }}
+>
                     <div>
                       <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
                         日付
@@ -1801,9 +1804,15 @@ async function deleteCreator(siteId, creator) {
 
                 <div style={{ ...cardStyle, padding: 14, background: "#fffaf5" }}>
                   <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
-                    材料追加フォーム
+                    材料登録
                   </div>
-                  <div className="ga-grid-5">
+                  <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1.1fr 1.4fr 1fr 1fr 0.7fr",
+    gap: 10,
+  }}
+>
                     <div>
                       <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
                         日付
@@ -1901,7 +1910,7 @@ async function deleteCreator(siteId, creator) {
               <div className="ga-grid-2" style={{ marginTop: 16 }}>
                 <div style={cardStyle}>
                   <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
-                    5. 作業一覧
+                   作業一覧
                   </div>
                   <div style={{ maxHeight: 380, overflow: "auto" }}>
                     <table className="ga-table">
@@ -1952,7 +1961,7 @@ async function deleteCreator(siteId, creator) {
 
                 <div style={cardStyle}>
                   <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
-                    6. 材料一覧
+                    材料一覧
                   </div>
                   <div style={{ maxHeight: 380, overflow: "auto" }}>
                     <table className="ga-table">
