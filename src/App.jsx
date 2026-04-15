@@ -127,16 +127,18 @@ export default function App() {
   });
 
   const [screen, setScreen] = useState(() => {
-  const navEntry = performance.getEntriesByType("navigation")[0];
-  const isReload = navEntry?.type === "reload";
-  if (isReload) {
-    return sessionStorage.getItem("screen") || "site";
-  }
-  return "site";
-});
-useEffect(() => {
-  sessionStorage.setItem("screen", screen);
-}, [screen]);
+    const navEntry = performance.getEntriesByType("navigation")[0];
+    const isReload = navEntry?.type === "reload";
+    if (isReload) {
+      return sessionStorage.getItem("screen") || "site";
+    }
+    return "site";
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem("screen", screen);
+  }, [screen]);
+
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState("");
 
@@ -179,6 +181,39 @@ useEffect(() => {
     [materialMasters]
   );
 
+  const [sites, setSites] = useState([]);
+  const [siteCreatorsMap, setSiteCreatorsMap] = useState({});
+  const [workLogs, setWorkLogs] = useState([]);
+  const [materials, setMaterials] = useState([]);
+
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [commonCreator, setCommonCreator] = useState("");
+
+  const [siteName, setSiteName] = useState("");
+  const [sitePerson, setSitePerson] = useState("");
+  const [editingSiteId, setEditingSiteId] = useState("");
+
+  const [newCreatorName, setNewCreatorName] = useState("");
+
+  const [workDate, setWorkDate] = useState(today());
+  const [workHours, setWorkHours] = useState("");
+  const [editingWorkId, setEditingWorkId] = useState("");
+
+  const [materialDate, setMaterialDate] = useState(today());
+  const [materialName, setMaterialName] = useState("");
+  const [materialThickness, setMaterialThickness] = useState("");
+  const [materialSize, setMaterialSize] = useState("");
+  const [materialQty, setMaterialQty] = useState("");
+  const [editingMaterialId, setEditingMaterialId] = useState("");
+
+  const [selectedMonth, setSelectedMonth] = useState(thisMonth());
+  const [serverInvoiceRows, setServerInvoiceRows] = useState([]);
+  const [serverInvoiceTotals, setServerInvoiceTotals] = useState({
+    work_amount: 0,
+    material_amount: 0,
+    total_amount: 0,
+  });
+
   const apiGet = async (params) => {
     const search = new URLSearchParams(params);
     const res = await fetch(`${GAS_URL}?${search.toString()}`, {
@@ -209,6 +244,43 @@ useEffect(() => {
     await flushQueue();
   };
 
+  const fetchInvoiceSummary = async () => {
+    try {
+      setInvoiceLoading(true);
+      setInvoiceError("");
+
+      const json = await apiGet({
+        action: "getInvoiceSummary",
+        view: "month",
+        month: selectedMonth || "",
+      });
+
+      if (!json?.ok) {
+        throw new Error(json?.error || "請求データ取得に失敗しました");
+      }
+
+      setServerInvoiceRows(Array.isArray(json.rows) ? json.rows : []);
+      setServerInvoiceTotals(
+        json.totals || {
+          work_amount: 0,
+          material_amount: 0,
+          total_amount: 0,
+        }
+      );
+    } catch (e) {
+      console.error("請求データ取得エラー", e);
+      setInvoiceError(e?.message || "請求データ取得に失敗しました");
+      setServerInvoiceRows([]);
+      setServerInvoiceTotals({
+        work_amount: 0,
+        material_amount: 0,
+        total_amount: 0,
+      });
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
   const flushQueue = async () => {
     if (syncingRef.current) return;
     const queue = readQueue();
@@ -235,6 +307,11 @@ useEffect(() => {
       setSyncing(false);
     }
   };
+
+  const activeSites = useMemo(
+    () => sites.filter((x) => x.status !== "deleted" && x.isActive !== false),
+    [sites]
+  );
 
   const toSiteGasRecord = (site) => ({
     record_id: String(site.recordId || site.record_id || site.id),
@@ -290,15 +367,7 @@ useEffect(() => {
     device_id: deviceIdRef.current,
     updated_by: creator || "app",
   });
-const getCreatorSiteSummary = (siteId, creator) => {
-  const site = activeSites.find((s) => String(s.id) === String(siteId));
-  return {
-    siteId: String(siteId),
-    siteName: site?.name || "",
-    manager: site?.person || "",
-    creator: String(creator || ""),
-  };
-};
+
   const toWorkGasRecord = (row, site) => ({
     record_id: row.id,
     entity_type: "work",
@@ -344,43 +413,6 @@ const getCreatorSiteSummary = (siteId, creator) => {
     device_id: deviceIdRef.current,
     updated_by: row.creator || "app",
   });
-
-  const fetchInvoiceSummary = async () => {
-    try {
-      setInvoiceLoading(true);
-      setInvoiceError("");
-
-      const json = await apiGet({
-        action: "getInvoiceSummary",
-        view: "month",
-        month: selectedMonth || "",
-      });
-
-      if (!json?.ok) {
-        throw new Error(json?.error || "請求データ取得に失敗しました");
-      }
-
-      setServerInvoiceRows(Array.isArray(json.rows) ? json.rows : []);
-      setServerInvoiceTotals(
-        json.totals || {
-          work_amount: 0,
-          material_amount: 0,
-          total_amount: 0,
-        }
-      );
-    } catch (e) {
-      console.error("請求データ取得エラー", e);
-      setInvoiceError(e?.message || "請求データ取得に失敗しました");
-      setServerInvoiceRows([]);
-      setServerInvoiceTotals({
-        work_amount: 0,
-        material_amount: 0,
-        total_amount: 0,
-      });
-    } finally {
-      setInvoiceLoading(false);
-    }
-  };
 
   useEffect(() => {
     const fetchBootstrap = async () => {
@@ -429,20 +461,20 @@ const getCreatorSiteSummary = (siteId, creator) => {
 
         const latestRecordMap = new Map();
 
-rawRecords.forEach((r) => {
-  const recordId = String(r?.record_id || "");
-  if (!recordId) return;
+        rawRecords.forEach((r) => {
+          const recordId = String(r?.record_id || "");
+          if (!recordId) return;
 
-  const old = latestRecordMap.get(recordId);
-  const oldTime = String(old?.updated_at || old?.created_at || "");
-  const newTime = String(r?.updated_at || r?.created_at || "");
+          const old = latestRecordMap.get(recordId);
+          const oldTime = String(old?.updated_at || old?.created_at || "");
+          const newTime = String(r?.updated_at || r?.created_at || "");
 
-  if (!old || newTime >= oldTime) {
-    latestRecordMap.set(recordId, r);
-  }
-});
+          if (!old || newTime >= oldTime) {
+            latestRecordMap.set(recordId, r);
+          }
+        });
 
-const latestRecords = Array.from(latestRecordMap.values());
+        const latestRecords = Array.from(latestRecordMap.values());
 
         const siteMap = new Map();
         const creatorMap = {};
@@ -457,11 +489,11 @@ const latestRecords = Array.from(latestRecordMap.values());
           const creator = String(r?.creator || "");
 
           if (
-  entityType === "site" &&
-  String(r?.status || "") !== "deleted" &&
-  siteId &&
-  !siteMap.has(siteId)
-) {
+            entityType === "site" &&
+            String(r?.status || "") !== "deleted" &&
+            siteId &&
+            !siteMap.has(siteId)
+          ) {
             siteMap.set(siteId, {
               id: siteId,
               recordId: String(r.record_id || siteId),
@@ -475,11 +507,11 @@ const latestRecords = Array.from(latestRecordMap.values());
           }
 
           if (
-  String(r?.status || "") !== "deleted" &&
-  !siteMap.has(siteId) &&
-  siteId &&
-  (siteName || manager)
-) {
+            String(r?.status || "") !== "deleted" &&
+            !siteMap.has(siteId) &&
+            siteId &&
+            (siteName || manager)
+          ) {
             siteMap.set(siteId, {
               id: siteId,
               recordId: siteId,
@@ -493,21 +525,21 @@ const latestRecords = Array.from(latestRecordMap.values());
           }
 
           if (
-  entityType === "site_creator" &&
-  String(r?.status || "") !== "deleted" &&
-  siteId &&
-  creator
-) {
-  creatorMap[siteId] = creatorMap[siteId] || [];
-  if (!creatorMap[siteId].some((x) => x.name === creator)) {
-    creatorMap[siteId].push({
-      name: creator,
-      recordId: String(r.record_id || ""),
-      createdAt: String(r.created_at || nowIso()),
-      updatedAt: String(r.updated_at || nowIso()),
-    });
-  }
-}
+            entityType === "site_creator" &&
+            String(r?.status || "") !== "deleted" &&
+            siteId &&
+            creator
+          ) {
+            creatorMap[siteId] = creatorMap[siteId] || [];
+            if (!creatorMap[siteId].some((x) => x.name === creator)) {
+              creatorMap[siteId].push({
+                name: creator,
+                recordId: String(r.record_id || ""),
+                createdAt: String(r.created_at || nowIso()),
+                updatedAt: String(r.updated_at || nowIso()),
+              });
+            }
+          }
 
           if (entityType === "work" && String(r?.status || "") !== "deleted") {
             restoredWorkLogs.push({
@@ -524,13 +556,13 @@ const latestRecords = Array.from(latestRecordMap.values());
             if (siteId && creator) {
               creatorMap[siteId] = creatorMap[siteId] || [];
               if (!creatorMap[siteId].some((x) => x.name === creator)) {
-  creatorMap[siteId].push({
-    name: creator,
-    recordId: "",
-    createdAt: "",
-    updatedAt: "",
-  });
-}
+                creatorMap[siteId].push({
+                  name: creator,
+                  recordId: "",
+                  createdAt: "",
+                  updatedAt: "",
+                });
+              }
             }
           }
 
@@ -554,13 +586,13 @@ const latestRecords = Array.from(latestRecordMap.values());
             if (siteId && creator) {
               creatorMap[siteId] = creatorMap[siteId] || [];
               if (!creatorMap[siteId].some((x) => x.name === creator)) {
-  creatorMap[siteId].push({
-    name: creator,
-    recordId: "",
-    createdAt: "",
-    updatedAt: "",
-  });
-}
+                creatorMap[siteId].push({
+                  name: creator,
+                  recordId: "",
+                  createdAt: "",
+                  updatedAt: "",
+                });
+              }
             }
           }
         });
@@ -575,19 +607,18 @@ const latestRecords = Array.from(latestRecordMap.values());
         setMaterials(restoredMaterials);
 
         const nextSiteId =
-  restoredSites.length > 0 ? String(restoredSites[0].id) : "";
-setSelectedSiteId(nextSiteId);
+          restoredSites.length > 0 ? String(restoredSites[0].id) : "";
+        setSelectedSiteId(nextSiteId);
 
-const nextCreators = nextSiteId ? creatorMap[nextSiteId] || [] : [];
-const nextCreator =
-  nextCreators.length > 0
-    ? (typeof nextCreators[0] === "string" ? nextCreators[0] : nextCreators[0].name)
-    : "";
+        const nextCreators = nextSiteId ? creatorMap[nextSiteId] || [] : [];
+        const nextCreator =
+          nextCreators.length > 0
+            ? typeof nextCreators[0] === "string"
+              ? nextCreators[0]
+              : nextCreators[0].name
+            : "";
 
-setCommonCreator(nextCreator);
-
-setSelectedSiteId(nextSiteId);
-setCommonCreator(nextCreator);
+        setCommonCreator(nextCreator);
 
         await flushQueue();
       } catch (e) {
@@ -622,11 +653,6 @@ setCommonCreator(nextCreator);
     };
   }, [selectedMonth]);
 
-  const activeSites = useMemo(
-    () => sites.filter((x) => x.status !== "deleted" && x.isActive !== false),
-    [sites]
-  );
-
   const activeWorkLogs = useMemo(
     () => workLogs.filter((x) => x.status !== "deleted"),
     [workLogs]
@@ -650,14 +676,14 @@ setCommonCreator(nextCreator);
   );
 
   const selectedSiteCreators = useMemo(
-  () =>
-    selectedSite
-      ? (siteCreatorsMap[String(selectedSite.id)] || []).map((x) =>
-          typeof x === "string" ? x : x.name
-        )
-      : [],
-  [selectedSite, siteCreatorsMap]
-);
+    () =>
+      selectedSite
+        ? (siteCreatorsMap[String(selectedSite.id)] || []).map((x) =>
+            typeof x === "string" ? x : x.name
+          )
+        : [],
+    [selectedSite, siteCreatorsMap]
+  );
 
   useEffect(() => {
     if (
@@ -775,66 +801,66 @@ setCommonCreator(nextCreator);
   }
 
   function openSite(site) {
-  setSelectedSiteId(String(site.id));
+    setSelectedSiteId(String(site.id));
 
-  const creators = siteCreatorsMap[String(site.id)] || [];
+    const creators = siteCreatorsMap[String(site.id)] || [];
+    const firstCreator =
+      creators.length > 0
+        ? typeof creators[0] === "string"
+          ? creators[0]
+          : creators[0].name
+        : "";
 
-  const firstCreator =
-    creators.length > 0
-      ? (typeof creators[0] === "string" ? creators[0] : creators[0].name)
-      : "";
+    setCommonCreator(firstCreator);
+    setScreen("creator");
+  }
 
-  setCommonCreator(firstCreator);
+  async function addCreator() {
+    if (!selectedSite) return notify("先に現場を選んでください");
+    const name = String(newCreatorName || "").trim();
+    if (!name) return notify("制作者を選んでください");
 
-  setScreen("creator");
-}
+    const currentCreators = siteCreatorsMap[String(selectedSite.id)] || [];
+    if (
+      currentCreators.some((x) => (typeof x === "string" ? x : x.name) === name)
+    ) {
+      return notify("この制作者は登録済みです");
+    }
 
- async function addCreator() {
-  if (!selectedSite) return notify("先に現場を選んでください");
-  const name = String(newCreatorName || "").trim();
-  if (!name) return notify("制作者を選んでください");
+    const creatorRecordId = makeId("site_creator");
+    const createdAt = nowIso();
 
-  const currentCreators = siteCreatorsMap[String(selectedSite.id)] || [];
-  if (
-  currentCreators.some((x) => (typeof x === "string" ? x : x.name) === name)
-) {
-  return notify("この制作者は登録済みです");
-}
+    setSiteCreatorsMap((prev) => ({
+      ...prev,
+      [String(selectedSite.id)]: [
+        ...(prev[String(selectedSite.id)] || []),
+        {
+          name,
+          recordId: creatorRecordId,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ],
+    }));
 
-  const creatorRecordId = makeId("site_creator");
-  const createdAt = nowIso();
+    setCommonCreator(name);
+    setNewCreatorName("");
 
-  setSiteCreatorsMap((prev) => ({
-    ...prev,
-    [String(selectedSite.id)]: [
-      ...(prev[String(selectedSite.id)] || []),
-      {
-        name,
+    await queueRecords([
+      toSiteCreatorGasRecord({
+        siteId: selectedSite.id,
+        siteName: selectedSite.name,
+        manager: selectedSite.person,
+        creator: name,
         recordId: creatorRecordId,
         createdAt,
         updatedAt: createdAt,
-      },
-    ],
-  }));
+      }),
+    ]);
+    await flushQueue();
 
-  setCommonCreator(name);
-  setNewCreatorName("");
-
-  await queueRecords([
-    toSiteCreatorGasRecord({
-      siteId: selectedSite.id,
-      siteName: selectedSite.name,
-      manager: selectedSite.person,
-      creator: name,
-      recordId: creatorRecordId,
-      createdAt,
-      updatedAt: createdAt,
-    }),
-  ]);
-  await flushQueue();
-
-  notify("制作者を登録しました");
-}
+    notify("制作者を登録しました");
+  }
 
   async function saveWork() {
     if (!selectedSite) return notify("先に現場を選んでください");
@@ -974,152 +1000,151 @@ setCommonCreator(nextCreator);
     setCommonCreator(row.creator || "");
     setScreen("work");
   }
-async function deleteSite(siteId) {
-  const site = sites.find((s) => String(s.id) === String(siteId));
-  if (!site) return;
 
-  if (!window.confirm(`現場「${site.name}」を削除しますか？`)) return;
+  async function deleteSite(siteId) {
+    const site = sites.find((s) => String(s.id) === String(siteId));
+    if (!site) return;
+    if (!window.confirm(`現場「${site.name}」を削除しますか？`)) return;
 
-  const now = nowIso();
-
-  const deletedSite = {
-    ...site,
-    status: "deleted",
-    updatedAt: now,
-  };
-
-  const relatedCreators = siteCreatorsMap[String(siteId)] || [];
-  const relatedWorks = workLogs.filter((x) => String(x.siteId) === String(siteId));
-  const relatedMaterials = materials.filter((x) => String(x.siteId) === String(siteId));
-
-  setSites((prev) =>
-    prev.map((s) => (String(s.id) === String(siteId) ? deletedSite : s))
-  );
-
-  setWorkLogs((prev) =>
-    prev.map((x) =>
-      String(x.siteId) === String(siteId) ? { ...x, status: "deleted", updatedAt: now } : x
-    )
-  );
-
-  setMaterials((prev) =>
-    prev.map((x) =>
-      String(x.siteId) === String(siteId) ? { ...x, status: "deleted", updatedAt: now } : x
-    )
-  );
-
-  setSiteCreatorsMap((prev) => {
-    const next = { ...prev };
-    delete next[String(siteId)];
-    return next;
-  });
-
-  if (String(selectedSiteId) === String(siteId)) {
-    setSelectedSiteId("");
-    setCommonCreator("");
-    setScreen("site");
-  }
-
-  const records = [
-    toSiteGasRecord(deletedSite),
-    ...relatedCreators.map((item) =>
-  toSiteCreatorGasRecord({
-    siteId,
-    siteName: site.name,
-    manager: site.person,
-    creator: item.name,
-    recordId: item.recordId,
-    createdAt: item.createdAt,
-    updatedAt: now,
-    status: "deleted",
-  })
-),
-    ...relatedWorks.map((row) =>
-      toWorkGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-    ),
-    ...relatedMaterials.map((row) =>
-      toMaterialGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-    ),
-  ];
-
-  await queueRecords(records);
-  await fetchInvoiceSummary();
-  notify("現場を削除しました");
-}
-
-async function deleteCreator(siteId, creator) {
-  const site = sites.find((s) => String(s.id) === String(siteId));
-  if (!site) return;
-
-  if (!window.confirm(`制作者「${creator}」を削除しますか？`)) return;
-
-  const now = nowIso();
-  const creatorEntry = (siteCreatorsMap[String(siteId)] || []).find(
-    (x) => x.name === creator
-  );
-
-  const relatedWorks = workLogs.filter(
-    (x) => String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-  );
-  const relatedMaterials = materials.filter(
-    (x) => String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-  );
-
-  setWorkLogs((prev) =>
-    prev.map((x) =>
-      String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-        ? { ...x, status: "deleted", updatedAt: now }
-        : x
-    )
-  );
-
-  setMaterials((prev) =>
-    prev.map((x) =>
-      String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-        ? { ...x, status: "deleted", updatedAt: now }
-        : x
-    )
-  );
-
-  setSiteCreatorsMap((prev) => ({
-    ...prev,
-    [String(siteId)]: (prev[String(siteId)] || []).filter((x) => x.name !== creator),
-  }));
-
-  if (String(selectedSiteId) === String(siteId) && commonCreator === creator) {
-    const nextCreators = (siteCreatorsMap[String(siteId)] || [])
-      .filter((x) => x.name !== creator)
-      .map((x) => x.name);
-    setCommonCreator(nextCreators[0] || "");
-    if (nextCreators.length === 0) {
-      setScreen("creator");
-    }
-  }
-
-  const records = [
-    toSiteCreatorGasRecord({
-      siteId,
-      siteName: site.name,
-      manager: site.person,
-      creator,
-      recordId: creatorEntry?.recordId,
-      createdAt: creatorEntry?.createdAt,
-      updatedAt: now,
+    const now = nowIso();
+    const deletedSite = {
+      ...site,
       status: "deleted",
-    }),
-    ...relatedWorks.map((row) =>
-      toWorkGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-    ),
-    ...relatedMaterials.map((row) =>
-      toMaterialGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-    ),
-  ];
+      updatedAt: now,
+    };
 
-  await queueRecords(records);
-  await flushQueue();
-  await fetchInvoiceSummary();
-  notify("制作者を削除しました");
-}
+    const relatedCreators = siteCreatorsMap[String(siteId)] || [];
+    const relatedWorks = workLogs.filter((x) => String(x.siteId) === String(siteId));
+    const relatedMaterials = materials.filter((x) => String(x.siteId) === String(siteId));
+
+    setSites((prev) =>
+      prev.map((s) => (String(s.id) === String(siteId) ? deletedSite : s))
+    );
+
+    setWorkLogs((prev) =>
+      prev.map((x) =>
+        String(x.siteId) === String(siteId) ? { ...x, status: "deleted", updatedAt: now } : x
+      )
+    );
+
+    setMaterials((prev) =>
+      prev.map((x) =>
+        String(x.siteId) === String(siteId) ? { ...x, status: "deleted", updatedAt: now } : x
+      )
+    );
+
+    setSiteCreatorsMap((prev) => {
+      const next = { ...prev };
+      delete next[String(siteId)];
+      return next;
+    });
+
+    if (String(selectedSiteId) === String(siteId)) {
+      setSelectedSiteId("");
+      setCommonCreator("");
+      setScreen("site");
+    }
+
+    const records = [
+      toSiteGasRecord(deletedSite),
+      ...relatedCreators.map((item) =>
+        toSiteCreatorGasRecord({
+          siteId,
+          siteName: site.name,
+          manager: site.person,
+          creator: item.name,
+          recordId: item.recordId,
+          createdAt: item.createdAt,
+          updatedAt: now,
+          status: "deleted",
+        })
+      ),
+      ...relatedWorks.map((row) =>
+        toWorkGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
+      ),
+      ...relatedMaterials.map((row) =>
+        toMaterialGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
+      ),
+    ];
+
+    await queueRecords(records);
+    await fetchInvoiceSummary();
+    notify("現場を削除しました");
+  }
+
+  async function deleteCreator(siteId, creator) {
+    const site = sites.find((s) => String(s.id) === String(siteId));
+    if (!site) return;
+    if (!window.confirm(`制作者「${creator}」を削除しますか？`)) return;
+
+    const now = nowIso();
+    const creatorEntry = (siteCreatorsMap[String(siteId)] || []).find(
+      (x) => x.name === creator
+    );
+
+    const relatedWorks = workLogs.filter(
+      (x) => String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
+    );
+    const relatedMaterials = materials.filter(
+      (x) => String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
+    );
+
+    setWorkLogs((prev) =>
+      prev.map((x) =>
+        String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
+          ? { ...x, status: "deleted", updatedAt: now }
+          : x
+      )
+    );
+
+    setMaterials((prev) =>
+      prev.map((x) =>
+        String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
+          ? { ...x, status: "deleted", updatedAt: now }
+          : x
+      )
+    );
+
+    setSiteCreatorsMap((prev) => ({
+      ...prev,
+      [String(siteId)]: (prev[String(siteId)] || []).filter((x) => x.name !== creator),
+    }));
+
+    if (String(selectedSiteId) === String(siteId) && commonCreator === creator) {
+      const nextCreators = (siteCreatorsMap[String(siteId)] || [])
+        .filter((x) => x.name !== creator)
+        .map((x) => x.name);
+      setCommonCreator(nextCreators[0] || "");
+      if (nextCreators.length === 0) {
+        setScreen("creator");
+      }
+    }
+
+    const records = [
+      toSiteCreatorGasRecord({
+        siteId,
+        siteName: site.name,
+        manager: site.person,
+        creator,
+        recordId: creatorEntry?.recordId,
+        createdAt: creatorEntry?.createdAt,
+        updatedAt: now,
+        status: "deleted",
+      }),
+      ...relatedWorks.map((row) =>
+        toWorkGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
+      ),
+      ...relatedMaterials.map((row) =>
+        toMaterialGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
+      ),
+    ];
+
+    await queueRecords(records);
+    await flushQueue();
+    await fetchInvoiceSummary();
+    notify("制作者を削除しました");
+  }
+
   async function deleteWork(id) {
     const target = workLogs.find((x) => String(x.id) === String(id));
     if (!target) return;
@@ -1162,31 +1187,29 @@ async function deleteCreator(siteId, creator) {
   }
 
   const creatorCards = useMemo(() => {
-  if (!selectedSite) return [];
-  return (siteCreatorsMap[String(selectedSite.id)] || []).map((item) => {
-    const name = item.name;
-    const works = activeWorkLogs.filter(
-      (x) =>
-        String(x.siteId) === String(selectedSite.id) &&
-        String(x.creator) === String(name)
-    );
-    const mats = activeMaterials.filter(
-      (x) =>
-        String(x.siteId) === String(selectedSite.id) &&
-        String(x.creator) === String(name)
-    );
-    return {
-      name,
-      recordId: item.recordId,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-      workHoursTotal: works.reduce((sum, x) => sum + Number(x.hours || 0), 0),
-      workCount: works.length,
-      materialQtyTotal: mats.reduce((sum, x) => sum + Number(x.qty || 0), 0),
-      materialCount: mats.length,
-    };
-  });
-}, [selectedSite, siteCreatorsMap, activeWorkLogs, activeMaterials]);
+    if (!selectedSite) return [];
+    return (siteCreatorsMap[String(selectedSite.id)] || []).map((item) => {
+      const name = item.name;
+      const works = activeWorkLogs.filter(
+        (x) =>
+          String(x.siteId) === String(selectedSite.id) &&
+          String(x.creator) === String(name)
+      );
+      const mats = activeMaterials.filter(
+        (x) =>
+          String(x.siteId) === String(selectedSite.id) &&
+          String(x.creator) === String(name)
+      );
+      return {
+        name,
+        recordId: item.recordId,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        workHoursTotal: works.reduce((sum, x) => sum + Number(x.hours || 0), 0),
+        materialQtyTotal: mats.reduce((sum, x) => sum + Number(x.qty || 0), 0),
+      };
+    });
+  }, [selectedSite, siteCreatorsMap, activeWorkLogs, activeMaterials]);
 
   const creatorWorkLogs = useMemo(() => {
     if (!selectedSite) return [];
@@ -1205,22 +1228,6 @@ async function deleteCreator(siteId, creator) {
       return true;
     });
   }, [selectedSite, commonCreator, activeMaterials]);
-
-  const monthWorkHours = useMemo(
-    () =>
-      creatorWorkLogs
-        .filter((x) => monthOf(x.date) === selectedMonth)
-        .reduce((sum, x) => sum + Number(x.hours || 0), 0),
-    [creatorWorkLogs, selectedMonth]
-  );
-
-  const monthMaterialQty = useMemo(
-    () =>
-      creatorMaterials
-        .filter((x) => monthOf(x.date) === selectedMonth)
-        .reduce((sum, x) => sum + Number(x.qty || 0), 0),
-    [creatorMaterials, selectedMonth]
-  );
 
   const displayInvoiceRows = useMemo(
     () =>
@@ -1315,27 +1322,28 @@ async function deleteCreator(siteId, creator) {
   const cardStyle = {
     background: "#fff",
     border: "1px solid #d9e0ea",
-    borderRadius: 16,
-    boxShadow: "0 6px 20px rgba(17,24,39,0.06)",
-    padding: 16,
+    borderRadius: 12,
+    boxShadow: "0 4px 12px rgba(17,24,39,0.05)",
+    padding: 10,
   };
 
   const inputStyle = {
     width: "100%",
-    padding: "10px 12px",
+    padding: "7px 9px",
     border: "1px solid #cfd8e3",
-    borderRadius: 10,
-    fontSize: 14,
+    borderRadius: 8,
+    fontSize: 12,
     boxSizing: "border-box",
     background: "#fff",
   };
 
   const buttonStyle = {
-    padding: "10px 14px",
+    padding: "7px 10px",
     border: "none",
-    borderRadius: 10,
+    borderRadius: 8,
     cursor: "pointer",
     fontWeight: 700,
+    fontSize: 12,
   };
 
   return (
@@ -1343,77 +1351,77 @@ async function deleteCreator(siteId, creator) {
       style={{
         minHeight: "100vh",
         background: "#eef3f8",
-        padding: 18,
+        padding: 8,
         color: "#1f2937",
         boxSizing: "border-box",
       }}
     >
       <style>{`
         * { box-sizing: border-box; }
-        .ga-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-        .ga-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-        .ga-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-        .ga-grid-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
-        .ga-list { display:flex; flex-direction:column; gap:10px; }
+        .ga-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .ga-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+        .ga-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+        .ga-grid-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+        .ga-list { display:flex; flex-direction:column; gap:6px; }
         .ga-btn-secondary { background:#eef4fb; color:#1f2937; }
         .ga-btn-primary { background:#2f6fec; color:#fff; }
         .ga-btn-danger { background:#e74c3c; color:#fff; }
         .ga-btn-dark { background:#111827; color:#fff; }
-        .ga-pill { display:inline-flex; align-items:center; justify-content:center; padding:6px 10px; border-radius:999px; background:#eef4fb; font-size:12px; font-weight:700; }
-        .ga-kpi { background:linear-gradient(180deg,#ffffff 0%,#f7f9fc 100%); border:1px solid #d9e0ea; border-radius:14px; padding:14px; }
+        .ga-kpi { background:linear-gradient(180deg,#ffffff 0%,#f7f9fc 100%); border:1px solid #d9e0ea; border-radius:10px; padding:8px; }
         .ga-table { width:100%; border-collapse:collapse; }
-        .ga-table th, .ga-table td { padding:10px 8px; border-bottom:1px solid #e5e7eb; text-align:left; font-size:13px; }
+        .ga-table th, .ga-table td { padding:6px 6px; border-bottom:1px solid #e5e7eb; text-align:left; font-size:11px; white-space:nowrap; }
         .ga-table th { background:#f8fafc; }
-        .ga-card-button { width:100%; text-align:left; background:#fff; border:1px solid #dbe3ee; border-radius:14px; padding:14px; cursor:pointer; }
-        .ga-card-button.active { border:2px solid #2f6fec; background:#f5f9ff; }
+        .ga-card-button { width:100%; text-align:left; background:#fff; border:1px solid #dbe3ee; border-radius:10px; padding:8px; cursor:pointer; }
         @media (max-width:980px){
-  .ga-grid-3,.ga-grid-4,.ga-grid-5{ grid-template-columns:1fr; }
-}
+          .ga-grid-3,.ga-grid-4,.ga-grid-5{ grid-template-columns:1fr; }
+        }
       `}</style>
 
-      <div style={{ ...cardStyle, marginBottom: 16, padding: 14 }}>
+      <div style={{ ...cardStyle, marginBottom: 8, padding: 8 }}>
         <div
           style={{
             display: "flex",
-            gap: 10,
+            gap: 8,
             alignItems: "center",
             justifyContent: "space-between",
-            flexWrap: "wrap",
           }}
         >
-          <div
-            style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
-          >
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
-  style={{
-    ...buttonStyle,
-    fontSize: 28,
-    padding: "6px 14px",
-    minWidth: 52,
-    lineHeight: 1,
-  }}
-  className="ga-btn-secondary"
-  onClick={movePrev}
->
-  ←
-</button>
+              style={{
+                ...buttonStyle,
+                padding: "4px 12px",
+                fontSize: 34,
+                lineHeight: 1,
+                minWidth: 56,
+                borderRadius: 12,
+              }}
+              className="ga-btn-secondary"
+              onClick={movePrev}
+            >
+              ←
+            </button>
 
-<button
-  style={{
-    ...buttonStyle,
-    fontSize: 28,
-    padding: "6px 14px",
-    minWidth: 52,
-    lineHeight: 1,
-  }}
-  className="ga-btn-secondary"
-  onClick={moveNext}
->
-  →
-</button>
+            <button
+              style={{
+                ...buttonStyle,
+                padding: "4px 12px",
+                fontSize: 34,
+                lineHeight: 1,
+                minWidth: 56,
+                borderRadius: 12,
+              }}
+              className="ga-btn-secondary"
+              onClick={moveNext}
+            >
+              →
+            </button>
           </div>
+
           {message ? (
-            <div style={{ fontWeight: 700, color: "#2457c5" }}>{message}</div>
+            <div style={{ fontWeight: 700, color: "#2457c5", fontSize: 12 }}>
+              {message}
+            </div>
           ) : null}
         </div>
       </div>
@@ -1421,26 +1429,28 @@ async function deleteCreator(siteId, creator) {
       {screen === "site" && (
         <>
           <div style={cardStyle}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>1. 現場登録</h2>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>1. 現場登録</h2>
+
             <div
-  style={{
-    marginTop: 14,
-    display: "grid",
-    gridTemplateColumns: "1.6fr 1fr auto",
-    gap: 10,
-    alignItems: "end",
-  }}
->
+              style={{
+                marginTop: 8,
+                display: "grid",
+                gridTemplateColumns: "1.7fr 1fr auto",
+                gap: 8,
+                alignItems: "end",
+              }}
+            >
               <div>
-                <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>現場名</div>
+                <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>現場名</div>
                 <input
                   style={inputStyle}
                   value={siteName}
                   onChange={(e) => setSiteName(e.target.value)}
                 />
               </div>
+
               <div>
-                <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>担当者</div>
+                <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>担当者</div>
                 <select
                   style={inputStyle}
                   value={sitePerson}
@@ -1454,7 +1464,10 @@ async function deleteCreator(siteId, creator) {
                   ))}
                 </select>
               </div>
-              <div style={{ display: "flex", alignItems: "end", gap: 8, whiteSpace: "nowrap" }}>
+
+              <div
+                style={{ display: "flex", alignItems: "end", gap: 6, whiteSpace: "nowrap" }}
+              >
                 <button style={buttonStyle} className="ga-btn-primary" onClick={saveSite}>
                   {editingSiteId ? "現場更新" : "現場登録"}
                 </button>
@@ -1475,11 +1488,12 @@ async function deleteCreator(siteId, creator) {
             </div>
           </div>
 
-          <div style={{ ...cardStyle, marginTop: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>登録済み現場一覧</h2>
-            <div className="ga-list" style={{ marginTop: 14 }}>
+          <div style={{ ...cardStyle, marginTop: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>登録済み現場一覧</h2>
+
+            <div className="ga-list" style={{ marginTop: 8 }}>
               {activeSites.length === 0 ? (
-                <div style={{ color: "#6b7280" }}>登録済み現場はありません</div>
+                <div style={{ color: "#6b7280", fontSize: 11 }}>登録済み現場はありません</div>
               ) : (
                 activeSites.map((site) => {
                   const works = activeWorkLogs.filter(
@@ -1495,50 +1509,61 @@ async function deleteCreator(siteId, creator) {
                       key={site.id}
                       style={{
                         border: active ? "2px solid #2f6fec" : "1px solid #dbe3ee",
-                        borderRadius: 14,
+                        borderRadius: 10,
                         background: active ? "#f5f9ff" : "#fff",
-                        padding: 14,
+                        padding: 8,
                       }}
                     >
                       <div
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 8,
                           alignItems: "center",
-                          flexWrap: "wrap",
                         }}
                       >
-                        <div>
-                          <div style={{ fontSize: 17, fontWeight: 800 }}>{site.name}</div>
-                          <div style={{ marginTop: 6, color: "#4b5563", fontSize: 13 }}>
-                            担当者: {site.person} / 作業件数: {works.length} / 材料件数:{" "}
-                            {mats.length} / 作成月: {monthOf(site.createdAt)}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}>
+                            {site.name}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 2,
+                              color: "#4b5563",
+                              fontSize: 11,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            担当者:{site.person} / 作業:{works.length} / 材料:{mats.length} / 月:
+                            {monthOf(site.createdAt)}
                           </div>
                         </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-  <button
-    style={buttonStyle}
-    className="ga-btn-secondary"
-    onClick={() => editSite(site)}
-  >
-    編集
-  </button>
-  <button
-    style={buttonStyle}
-    className="ga-btn-danger"
-    onClick={() => deleteSite(site.id)}
-  >
-    削除
-  </button>
-  <button
-    style={buttonStyle}
-    className="ga-btn-primary"
-    onClick={() => openSite(site)}
-  >
-    開く
-  </button>
-</div>
+
+                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
+                          <button
+                            style={buttonStyle}
+                            className="ga-btn-secondary"
+                            onClick={() => editSite(site)}
+                          >
+                            編集
+                          </button>
+                          <button
+                            style={buttonStyle}
+                            className="ga-btn-danger"
+                            onClick={() => deleteSite(site.id)}
+                          >
+                            削除
+                          </button>
+                          <button
+                            style={buttonStyle}
+                            className="ga-btn-primary"
+                            onClick={() => openSite(site)}
+                          >
+                            開く
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1550,210 +1575,191 @@ async function deleteCreator(siteId, creator) {
       )}
 
       {screen === "creator" && (
-  <div style={cardStyle}>
-    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>2. 制作者選択</h2>
-    {!selectedSite ? (
-      <div style={{ marginTop: 14, color: "#6b7280" }}>先に現場を選んでください</div>
-    ) : (
-      <>
-        <div style={{ marginTop: 14, fontWeight: 800, fontSize: 18 }}>
-          選択中現場: {selectedSite.name}
-        </div>
-        <div style={{ marginTop: 6, color: "#4b5563" }}>
-          担当者: {selectedSite.person}
-        </div>
+        <div style={cardStyle}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>2. 制作者選択</h2>
 
-        <div className="ga-grid-3" style={{ marginTop: 16 }}>
-          <div>
-            <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
-              新規制作者登録
+          {!selectedSite ? (
+            <div style={{ marginTop: 8, color: "#6b7280", fontSize: 11 }}>
+              先に現場を選んでください
             </div>
-            <select
-              style={inputStyle}
-              value={newCreatorName}
-              onChange={(e) => setNewCreatorName(e.target.value)}
-            >
-              <option value="">選択してください</option>
-              {workerNameOptions
-  .filter(
-    (name) =>
-      !(siteCreatorsMap[String(selectedSite?.id)] || []).some(
-        (x) => (typeof x === "string" ? x : x.name) === name
-      )
-  )
-  .map((name) => (
-    <option key={name} value={name}>
-      {name}
-    </option>
-  ))}
-            </select>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "end" }}>
-            <button style={buttonStyle} className="ga-btn-primary" onClick={addCreator}>
-              制作者登録
-            </button>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "end" }}>
-            <button
-              style={buttonStyle}
-              className="ga-btn-secondary"
-              onClick={() => setScreen("site")}
-            >
-              現場へ戻る
-            </button>
-          </div>
-        </div>
-
-        <div className="ga-grid-3" style={{ marginTop: 16 }}>
-          {creatorCards.length === 0 ? (
-            <div style={{ color: "#6b7280" }}>制作者が未登録です</div>
           ) : (
-            creatorCards.map((card) => (
-              <div
-                key={card.name}
-                style={{
-                  border:
-                    commonCreator === card.name
-                      ? "2px solid #2f6fec"
-                      : "1px solid #dbe3ee",
-                  borderRadius: 14,
-                  background: commonCreator === card.name ? "#f5f9ff" : "#fff",
-                  padding: 14,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    alignItems: "start",
-                  }}
-                >
-                  <button
-                    className="ga-card-button"
-                    style={{
-                      border: "none",
-                      padding: 0,
-                      background: "transparent",
-                      boxShadow: "none",
-                    }}
-                    onClick={() => {
-                      setCommonCreator(card.name);
-                      setScreen("work");
-                    }}
-                  >
-                    <div style={{ fontSize: 16, fontWeight: 800 }}>{card.name}</div>
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 13,
-                        color: "#4b5563",
-                        lineHeight: 1.7,
-                      }}
-                    >
-                      作業時間合計: {fmt(card.workHoursTotal)} h
-                      <br />
-                      作業件数: {fmt(card.workCount)} 件
-                      <br />
-                      材料枚数合計: {fmt(card.materialQtyTotal)} 枚
-                      <br />
-                      材料件数: {fmt(card.materialCount)} 件
-                    </div>
-                  </button>
+            <>
+              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 14 }}>
+                選択中現場: {selectedSite.name}
+              </div>
+              <div style={{ marginTop: 2, color: "#4b5563", fontSize: 11 }}>
+                担当者: {selectedSite.person}
+              </div>
 
-                  <button
-                    style={{ ...buttonStyle, padding: "8px 10px" }}
-                    className="ga-btn-danger"
-                    onClick={() => deleteCreator(selectedSite.id, card.name)}
+              <div className="ga-grid-3" style={{ marginTop: 8 }}>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
+                    新規制作者登録
+                  </div>
+                  <select
+                    style={inputStyle}
+                    value={newCreatorName}
+                    onChange={(e) => setNewCreatorName(e.target.value)}
                   >
-                    削除
+                    <option value="">選択してください</option>
+                    {workerNameOptions
+                      .filter(
+                        (name) =>
+                          !(siteCreatorsMap[String(selectedSite?.id)] || []).some(
+                            (x) => (typeof x === "string" ? x : x.name) === name
+                          )
+                      )
+                      .map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "end" }}>
+                  <button style={buttonStyle} className="ga-btn-primary" onClick={addCreator}>
+                    制作者登録
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "end" }}>
+                  <button
+                    style={buttonStyle}
+                    className="ga-btn-secondary"
+                    onClick={() => setScreen("site")}
+                  >
+                    現場へ戻る
                   </button>
                 </div>
               </div>
-            ))
+
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                }}
+              >
+                {creatorCards.length === 0 ? (
+                  <div style={{ color: "#6b7280", fontSize: 11 }}>制作者が未登録です</div>
+                ) : (
+                  creatorCards.map((card) => (
+                    <div
+                      key={card.name}
+                      style={{
+                        border:
+                          commonCreator === card.name
+                            ? "2px solid #2f6fec"
+                            : "1px solid #dbe3ee",
+                        borderRadius: 10,
+                        background: commonCreator === card.name ? "#f5f9ff" : "#fff",
+                        padding: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 8,
+                          alignItems: "start",
+                        }}
+                      >
+                        <button
+                          className="ga-card-button"
+                          style={{
+                            border: "none",
+                            padding: 0,
+                            background: "transparent",
+                            boxShadow: "none",
+                          }}
+                          onClick={() => {
+                            setCommonCreator(card.name);
+                            setScreen("work");
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 800 }}>{card.name}</div>
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 11,
+                              color: "#4b5563",
+                              lineHeight: 1.4,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            作業時間合計:{fmt(card.workHoursTotal)}h / 材料合計:
+                            {fmt(card.materialQtyTotal)}枚
+                          </div>
+                        </button>
+
+                        <button
+                          style={buttonStyle}
+                          className="ga-btn-danger"
+                          onClick={() => deleteCreator(selectedSite.id, card.name)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </div>
-      </>
-    )}
-  </div>
-)}
+      )}
 
       {screen === "work" && (
         <div style={cardStyle}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>3. 現場別作業登録</h2>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>3. 現場別作業登録</h2>
 
           {!selectedSite ? (
-            <div style={{ marginTop: 14, color: "#6b7280" }}>先に現場を選んでください</div>
+            <div style={{ marginTop: 8, color: "#6b7280", fontSize: 11 }}>
+              先に現場を選んでください
+            </div>
           ) : (
             <>
-              
-                </div>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>担当者</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>{selectedSite.person}</div>
-                </div>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>制作者</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {commonCreator || "未選択"}
-                  </div>
-                </div>
-                <div className="ga-kpi">
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>月</div>
-                  <input
-                    style={{ ...inputStyle, marginTop: 6 }}
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                  />
-                </div>
-              </div>
-
               <div
-  style={{
-    marginTop: 14,
-    display: "flex",
-    gap: 14,
-    alignItems: "center",
-    flexWrap: "wrap",
-    fontSize: 14,
-    fontWeight: 700,
-  }}
->
-  <span>現場名: {selectedSite.name}</span>
-  <span>担当者: {selectedSite.person}</span>
-  <span>制作者: {commonCreator || "未選択"}</span>
-  <input
-    style={{ ...inputStyle, width: 140 }}
-    type="month"
-    value={selectedMonth}
-    onChange={(e) => setSelectedMonth(e.target.value)}
-  />
-</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {fmt(monthMaterialQty)}枚
-                  </div>
-                </div>
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  flexWrap: "nowrap",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  overflowX: "auto",
+                }}
+              >
+                <span>現場名:{selectedSite.name}</span>
+                <span>担当者:{selectedSite.person}</span>
+                <span>制作者:{commonCreator || "未選択"}</span>
+                <input
+                  style={{ ...inputStyle, width: 120, flex: "0 0 auto" }}
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                />
               </div>
 
-              <div className="ga-grid-2" style={{ marginTop: 16 }}>
-                <div style={{ ...cardStyle, padding: 14, background: "#f8fbff" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
+              <div className="ga-grid-2" style={{ marginTop: 8 }}>
+                <div style={{ ...cardStyle, padding: 8, background: "#f8fbff" }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
                     作業登録
                   </div>
                   <div
-  style={{
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
-    gap: 10,
-  }}
->
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: 8,
+                    }}
+                  >
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
-                        日付
-                      </div>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>日付</div>
                       <input
                         style={inputStyle}
                         type="date"
@@ -1762,7 +1768,7 @@ async function deleteCreator(siteId, creator) {
                       />
                     </div>
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
                         作業時間
                       </div>
                       <input
@@ -1774,7 +1780,7 @@ async function deleteCreator(siteId, creator) {
                       />
                     </div>
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
                         制作者
                       </div>
                       <select
@@ -1791,7 +1797,7 @@ async function deleteCreator(siteId, creator) {
                       </select>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                     <button
                       style={buttonStyle}
                       className="ga-btn-primary"
@@ -1802,21 +1808,19 @@ async function deleteCreator(siteId, creator) {
                   </div>
                 </div>
 
-                <div style={{ ...cardStyle, padding: 14, background: "#fffaf5" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
+                <div style={{ ...cardStyle, padding: 8, background: "#fffaf5" }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
                     材料登録
                   </div>
                   <div
-  style={{
-    display: "grid",
-    gridTemplateColumns: "1.1fr 1.4fr 1fr 1fr 0.7fr",
-    gap: 10,
-  }}
->
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.1fr 1.4fr 1fr 1fr 0.7fr",
+                      gap: 8,
+                    }}
+                  >
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
-                        日付
-                      </div>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>日付</div>
                       <input
                         style={inputStyle}
                         type="date"
@@ -1825,7 +1829,7 @@ async function deleteCreator(siteId, creator) {
                       />
                     </div>
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
                         材料名
                       </div>
                       <select
@@ -1846,7 +1850,7 @@ async function deleteCreator(siteId, creator) {
                       </select>
                     </div>
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
                         厚み
                       </div>
                       <select
@@ -1866,7 +1870,7 @@ async function deleteCreator(siteId, creator) {
                       </select>
                     </div>
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
                         サイズ
                       </div>
                       <select
@@ -1883,9 +1887,7 @@ async function deleteCreator(siteId, creator) {
                       </select>
                     </div>
                     <div>
-                      <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>
-                        枚
-                      </div>
+                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>枚</div>
                       <input
                         style={inputStyle}
                         type="number"
@@ -1895,7 +1897,7 @@ async function deleteCreator(siteId, creator) {
                       />
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                     <button
                       style={buttonStyle}
                       className="ga-btn-primary"
@@ -1907,12 +1909,12 @@ async function deleteCreator(siteId, creator) {
                 </div>
               </div>
 
-              <div className="ga-grid-2" style={{ marginTop: 16 }}>
+              <div className="ga-grid-2" style={{ marginTop: 8 }}>
                 <div style={cardStyle}>
-                  <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
-                   作業一覧
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
+                    作業一覧
                   </div>
-                  <div style={{ maxHeight: 380, overflow: "auto" }}>
+                  <div style={{ maxHeight: 300, overflow: "auto" }}>
                     <table className="ga-table">
                       <thead>
                         <tr>
@@ -1934,16 +1936,16 @@ async function deleteCreator(siteId, creator) {
                               <td>{row.creator}</td>
                               <td>{fmt(row.hours)}</td>
                               <td>
-                                <div style={{ display: "flex", gap: 6 }}>
+                                <div style={{ display: "flex", gap: 4 }}>
                                   <button
-                                    style={{ ...buttonStyle, padding: "7px 10px" }}
+                                    style={buttonStyle}
                                     className="ga-btn-secondary"
                                     onClick={() => editWork(row)}
                                   >
                                     編集
                                   </button>
                                   <button
-                                    style={{ ...buttonStyle, padding: "7px 10px" }}
+                                    style={buttonStyle}
                                     className="ga-btn-danger"
                                     onClick={() => deleteWork(row.id)}
                                   >
@@ -1960,10 +1962,10 @@ async function deleteCreator(siteId, creator) {
                 </div>
 
                 <div style={cardStyle}>
-                  <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
                     材料一覧
                   </div>
-                  <div style={{ maxHeight: 380, overflow: "auto" }}>
+                  <div style={{ maxHeight: 300, overflow: "auto" }}>
                     <table className="ga-table">
                       <thead>
                         <tr>
@@ -1995,16 +1997,16 @@ async function deleteCreator(siteId, creator) {
                               <td>{fmt(row.unitPrice)}</td>
                               <td>{fmt(row.qty * row.unitPrice * 1.35)}</td>
                               <td>
-                                <div style={{ display: "flex", gap: 6 }}>
+                                <div style={{ display: "flex", gap: 4 }}>
                                   <button
-                                    style={{ ...buttonStyle, padding: "7px 10px" }}
+                                    style={buttonStyle}
                                     className="ga-btn-secondary"
                                     onClick={() => editMaterial(row)}
                                   >
                                     編集
                                   </button>
                                   <button
-                                    style={{ ...buttonStyle, padding: "7px 10px" }}
+                                    style={buttonStyle}
                                     className="ga-btn-danger"
                                     onClick={() => deleteMaterial(row.id)}
                                   >
@@ -2027,11 +2029,19 @@ async function deleteCreator(siteId, creator) {
 
       {screen === "invoice" && (
         <div style={cardStyle}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>4. 請求書・集計</h2>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>4. 請求書・集計</h2>
 
-          <div className="ga-grid-2" style={{ marginTop: 14 }}>
+          <div
+            style={{
+              marginTop: 8,
+              display: "grid",
+              gridTemplateColumns: "140px auto",
+              gap: 8,
+              alignItems: "end",
+            }}
+          >
             <div>
-              <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 700 }}>月選択</div>
+              <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>月選択</div>
               <input
                 style={inputStyle}
                 type="month"
@@ -2039,67 +2049,83 @@ async function deleteCreator(siteId, creator) {
                 onChange={(e) => setSelectedMonth(e.target.value)}
               />
             </div>
-            <div />
+
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "nowrap",
+                justifyContent: "flex-start",
+                alignItems: "end",
+              }}
+            >
+              <button
+                style={buttonStyle}
+                className="ga-btn-secondary"
+                onClick={exportInvoiceCsv}
+              >
+                CSV出力
+              </button>
+              <button
+                style={buttonStyle}
+                className="ga-btn-dark"
+                onClick={() => window.print()}
+              >
+                A3印刷
+              </button>
+              <button
+                style={buttonStyle}
+                className="ga-btn-secondary"
+                onClick={() => setScreen("work")}
+              >
+                作業画面へ戻る
+              </button>
+            </div>
           </div>
 
           {invoiceLoading && (
-            <div style={{ fontSize: 12, color: "#666", marginTop: 14 }}>
+            <div style={{ fontSize: 11, color: "#666", marginTop: 8 }}>
               請求金額を読込中...
             </div>
           )}
 
           {!!invoiceError && (
-            <div style={{ fontSize: 12, color: "#d32f2f", marginTop: 14 }}>
+            <div style={{ fontSize: 11, color: "#d32f2f", marginTop: 8 }}>
               {invoiceError}
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            <button
-              style={buttonStyle}
-              className="ga-btn-secondary"
-              onClick={exportInvoiceCsv}
-            >
-              CSV出力
-            </button>
-            <button
-              style={buttonStyle}
-              className="ga-btn-dark"
-              onClick={() => window.print()}
-            >
-              A3印刷
-            </button>
-            <button
-              style={buttonStyle}
-              className="ga-btn-secondary"
-              onClick={() => setScreen("work")}
-            >
-              作業画面へ戻る
-            </button>
-          </div>
-
-          <div className="ga-grid-3" style={{ marginTop: 16 }}>
+          <div
+            style={{
+              marginTop: 8,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 8,
+            }}
+          >
             <div className="ga-kpi">
-              <div style={{ fontSize: 12, color: "#6b7280" }}>作業請求総額</div>
-              <div style={{ marginTop: 6, fontWeight: 800 }}>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>作業請求総額</div>
+              <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>
                 {fmt(workInvoiceTotal)}円
               </div>
             </div>
             <div className="ga-kpi">
-              <div style={{ fontSize: 12, color: "#6b7280" }}>材料費合計</div>
-              <div style={{ marginTop: 6, fontWeight: 800 }}>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>材料費合計</div>
+              <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>
                 {fmt(materialInvoiceTotal)}円
               </div>
             </div>
             <div className="ga-kpi">
-              <div style={{ fontSize: 12, color: "#6b7280" }}>請求総額</div>
-              <div style={{ marginTop: 6, fontWeight: 800 }}>{fmt(invoiceTotal)}円</div>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>請求総額</div>
+              <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>
+                {fmt(invoiceTotal)}円
+              </div>
             </div>
           </div>
 
-          <div style={{ ...cardStyle, marginTop: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>請求一覧</div>
-            <div style={{ maxHeight: 520, overflow: "auto" }}>
+          <div style={{ ...cardStyle, marginTop: 8 }}>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>請求一覧</div>
+            <div style={{ maxHeight: 420, overflow: "auto" }}>
               <table className="ga-table">
                 <thead>
                   <tr>
