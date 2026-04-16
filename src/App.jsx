@@ -1,5 +1,210 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+function Card({ children, style = {}, onClick, id }) {
+  return (
+    <div
+      id={id}
+      onClick={onClick}
+      style={{
+        borderRadius: 24,
+        border: "1px solid #e2e8f0",
+        background: "#ffffff",
+        boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Label({ children }) {
+  return (
+    <div
+      style={{
+        marginBottom: 8,
+        fontSize: 12,
+        fontWeight: 600,
+        color: "#64748b",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Button({
+  children,
+  primary = false,
+  dark = false,
+  onClick,
+  className = "",
+  disabled = false,
+  style = {},
+}) {
+  const bg = dark ? "#0f172a" : primary ? "#2563eb" : "#ffffff";
+  const color = dark || primary ? "#ffffff" : "#334155";
+  const border = dark || primary ? "none" : "1px solid #e2e8f0";
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={className}
+      style={{
+        height: 48,
+        borderRadius: 16,
+        padding: "0 16px",
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: disabled ? "default" : "pointer",
+        background: disabled ? "#cbd5e1" : bg,
+        color: disabled ? "#ffffff" : color,
+        border,
+        boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
+        whiteSpace: "nowrap",
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SmallButton({ children, onClick, danger = false }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      style={{
+        borderRadius: 10,
+        border: danger ? "none" : "1px solid #e2e8f0",
+        background: danger ? "#ef4444" : "#ffffff",
+        color: danger ? "#ffffff" : "#334155",
+        padding: "6px 10px",
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SelectField({ value, options, onChange }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          height: 48,
+          width: "100%",
+          appearance: "none",
+          borderRadius: 16,
+          border: "1px solid #e2e8f0",
+          background: "#ffffff",
+          padding: "0 44px 0 14px",
+          fontSize: 14,
+          color: "#334155",
+          outline: "none",
+        }}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <div
+        style={{
+          pointerEvents: "none",
+          position: "absolute",
+          inset: "0 14px 0 auto",
+          display: "flex",
+          alignItems: "center",
+          color: "#94a3b8",
+          fontSize: 12,
+        }}
+      >
+        ▼
+      </div>
+    </div>
+  );
+}
+
+function DateField({ value, onChange }) {
+  return (
+    <input
+      type="date"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        height: 48,
+        width: "100%",
+        borderRadius: 16,
+        border: "1px solid #e2e8f0",
+        background: "#ffffff",
+        padding: "0 14px",
+        fontSize: 14,
+        color: "#334155",
+        outline: "none",
+      }}
+    />
+  );
+}
+
+function NumberField({ value, onChange, step = "1", placeholder }) {
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      value={value}
+      step={step}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        height: 48,
+        width: "100%",
+        borderRadius: 16,
+        border: "1px solid #e2e8f0",
+        background: "#f8fafc",
+        padding: "0 14px",
+        fontSize: 14,
+        color: "#334155",
+        outline: "none",
+      }}
+    />
+  );
+}
+
+function TextField({ value, onChange, placeholder }) {
+  return (
+    <input
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        height: 48,
+        width: "100%",
+        borderRadius: 16,
+        border: "1px solid #e2e8f0",
+        background: "#f8fafc",
+        padding: "0 14px",
+        fontSize: 14,
+        color: "#334155",
+        outline: "none",
+      }}
+    />
+  );
+}
+
 export default function App() {
   const GAS_URL =
     "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
@@ -7,13 +212,7 @@ export default function App() {
   const SYNC_QUEUE_KEY = "genka_sync_queue_v3";
   const DEVICE_ID_KEY = "genka_device_id_v1";
 
-  const today = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
+  const today = () => new Date().toISOString().slice(0, 10);
 
   const thisMonth = () => {
     const d = new Date();
@@ -49,6 +248,12 @@ export default function App() {
       return `${y}/${m}/${day}`;
     }
     return String(v).replace(/-/g, "/").slice(0, 10);
+  };
+
+  const fmtMonthJa = (v) => {
+    if (!v) return "-";
+    const [y, m] = String(v).split("-");
+    return `${y}年${m}月`;
   };
 
   const makeId = (prefix) =>
@@ -94,44 +299,10 @@ export default function App() {
   const [workerMasters, setWorkerMasters] = useState([]);
   const [managerMasters, setManagerMasters] = useState([]);
 
-  const normalizeWorkerMaster = (x) => ({
-    id: String(x?.id ?? ""),
-    name: String(x?.name ?? ""),
-    hourly_rate: Number(x?.hourly_rate ?? 0),
-    is_active: String(x?.is_active ?? "true"),
-  });
-
-  const normalizeManagerMaster = (x) => ({
-    id: String(x?.id ?? ""),
-    name: String(x?.name ?? ""),
-    is_active: String(x?.is_active ?? "true"),
-  });
-
-  const normalizeMaterialMaster = (x) => ({
-    id: String(
-      x?.id ??
-        x?.material_id ??
-        x?.["id"] ??
-        x?.["material_id"] ??
-        x?.["材料ID"] ??
-        ""
-    ),
-    name: String(x?.name ?? x?.["name"] ?? x?.["材料名"] ?? ""),
-    thickness: String(x?.thickness ?? x?.["thickness"] ?? x?.["厚み"] ?? ""),
-    size: String(x?.size ?? x?.["size"] ?? x?.["サイズ"] ?? ""),
-    full_name: String(
-      x?.full_name ?? x?.["full_name"] ?? x?.["フル表示名"] ?? ""
-    ),
-    unit_price: Number(x?.unit_price ?? x?.["unit_price"] ?? x?.["単価"] ?? 0),
-    is_active: String(x?.is_active ?? "true"),
-  });
-
   const [screen, setScreen] = useState(() => {
     const navEntry = performance.getEntriesByType("navigation")[0];
     const isReload = navEntry?.type === "reload";
-    if (isReload) {
-      return sessionStorage.getItem("screen") || "site";
-    }
+    if (isReload) return sessionStorage.getItem("screen") || "site";
     return "site";
   });
 
@@ -139,47 +310,8 @@ export default function App() {
     sessionStorage.setItem("screen", screen);
   }, [screen]);
 
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
-  const [invoiceError, setInvoiceError] = useState("");
-
   const [message, setMessage] = useState("");
   const [syncing, setSyncing] = useState(false);
-
-  const notify = (text) => {
-    setMessage(text);
-    window.clearTimeout(window.__genka_msg_timer__);
-    window.__genka_msg_timer__ = window.setTimeout(() => setMessage(""), 2200);
-  };
-
-  const activeManagerMasters = useMemo(
-    () =>
-      managerMasters.filter(
-        (x) =>
-          String(x.is_active).toLowerCase() !== "false" &&
-          String(x.is_active) !== "0"
-      ),
-    [managerMasters]
-  );
-
-  const activeWorkerMasters = useMemo(
-    () =>
-      workerMasters.filter(
-        (x) =>
-          String(x.is_active).toLowerCase() !== "false" &&
-          String(x.is_active) !== "0"
-      ),
-    [workerMasters]
-  );
-
-  const activeMaterialMasters = useMemo(
-    () =>
-      materialMasters.filter(
-        (x) =>
-          String(x.is_active).toLowerCase() !== "false" &&
-          String(x.is_active) !== "0"
-      ),
-    [materialMasters]
-  );
 
   const [sites, setSites] = useState([]);
   const [siteCreatorsMap, setSiteCreatorsMap] = useState({});
@@ -213,6 +345,127 @@ export default function App() {
     material_amount: 0,
     total_amount: 0,
   });
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState("");
+
+  const notify = (text) => {
+    setMessage(text);
+    window.clearTimeout(window.__genka_msg_timer__);
+    window.__genka_msg_timer__ = window.setTimeout(() => setMessage(""), 1800);
+  };
+
+  const normalizeWorkerMaster = (x) => ({
+    id: String(x?.id ?? ""),
+    name: String(x?.name ?? ""),
+    hourly_rate: Number(x?.hourly_rate ?? 0),
+    is_active: String(x?.is_active ?? "true"),
+  });
+
+  const normalizeManagerMaster = (x) => ({
+    id: String(x?.id ?? ""),
+    name: String(x?.name ?? ""),
+    is_active: String(x?.is_active ?? "true"),
+  });
+
+  const normalizeMaterialMaster = (x) => ({
+    id: String(
+      x?.id ??
+        x?.material_id ??
+        x?.["id"] ??
+        x?.["material_id"] ??
+        x?.["材料ID"] ??
+        ""
+    ),
+    name: String(x?.name ?? x?.["name"] ?? x?.["材料名"] ?? ""),
+    thickness: String(x?.thickness ?? x?.["thickness"] ?? x?.["厚み"] ?? ""),
+    size: String(x?.size ?? x?.["size"] ?? x?.["サイズ"] ?? ""),
+    full_name: String(
+      x?.full_name ?? x?.["full_name"] ?? x?.["フル表示名"] ?? ""
+    ),
+    unit_price: Number(x?.unit_price ?? x?.["unit_price"] ?? x?.["単価"] ?? 0),
+    is_active: String(x?.is_active ?? "true"),
+  });
+
+  const activeManagerMasters = useMemo(
+    () =>
+      managerMasters.filter(
+        (x) =>
+          String(x.is_active).toLowerCase() !== "false" &&
+          String(x.is_active) !== "0"
+      ),
+    [managerMasters]
+  );
+
+  const activeWorkerMasters = useMemo(
+    () =>
+      workerMasters.filter(
+        (x) =>
+          String(x.is_active).toLowerCase() !== "false" &&
+          String(x.is_active) !== "0"
+      ),
+    [workerMasters]
+  );
+
+  const activeMaterialMasters = useMemo(
+    () =>
+      materialMasters.filter(
+        (x) =>
+          String(x.is_active).toLowerCase() !== "false" &&
+          String(x.is_active) !== "0"
+      ),
+    [materialMasters]
+  );
+
+  const managerNameOptions = useMemo(
+    () => activeManagerMasters.map((x) => x.name).filter(Boolean),
+    [activeManagerMasters]
+  );
+
+  const workerNameOptions = useMemo(
+    () => activeWorkerMasters.map((x) => x.name).filter(Boolean),
+    [activeWorkerMasters]
+  );
+
+  const materialNameOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(activeMaterialMasters.map((x) => x.name).filter(Boolean))
+      ),
+    [activeMaterialMasters]
+  );
+
+  const materialThicknessOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          activeMaterialMasters
+            .filter((x) => x.name === materialName)
+            .map((x) => x.thickness)
+            .filter(Boolean)
+        )
+      ),
+    [materialName, activeMaterialMasters]
+  );
+
+  const materialSizeOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          activeMaterialMasters
+            .filter(
+              (x) => x.name === materialName && x.thickness === materialThickness
+            )
+            .map((x) => x.size)
+            .filter(Boolean)
+        )
+      ),
+    [materialName, materialThickness, activeMaterialMasters]
+  );
+
+  const findMaterialMaster = (name, thickness, size) =>
+    activeMaterialMasters.find(
+      (x) => x.name === name && x.thickness === thickness && x.size === size
+    ) || null;
 
   const apiGet = async (params) => {
     const search = new URLSearchParams(params);
@@ -234,14 +487,6 @@ export default function App() {
     });
     const text = await res.text();
     return JSON.parse(text);
-  };
-
-  const queueRecords = async (records) => {
-    if (!Array.isArray(records) || !records.length) return;
-    const prev = readQueue();
-    const next = mergeQueueRows(prev, records);
-    writeQueue(next);
-    await flushQueue();
   };
 
   const fetchInvoiceSummary = async () => {
@@ -281,6 +526,14 @@ export default function App() {
     }
   };
 
+  const queueRecords = async (records) => {
+    if (!Array.isArray(records) || !records.length) return;
+    const prev = readQueue();
+    const next = mergeQueueRows(prev, records);
+    writeQueue(next);
+    await flushQueue();
+  };
+
   const flushQueue = async () => {
     if (syncingRef.current) return;
     const queue = readQueue();
@@ -307,11 +560,6 @@ export default function App() {
       setSyncing(false);
     }
   };
-
-  const activeSites = useMemo(
-    () => sites.filter((x) => x.status !== "deleted" && x.isActive !== false),
-    [sites]
-  );
 
   const toSiteGasRecord = (site) => ({
     record_id: String(site.recordId || site.record_id || site.id),
@@ -645,22 +893,17 @@ export default function App() {
       flushQueue();
       fetchInvoiceSummary();
     };
-    window.addEventListener("focus", onFocus);
 
+    window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(id);
       window.removeEventListener("focus", onFocus);
     };
   }, [selectedMonth]);
 
-  const activeWorkLogs = useMemo(
-    () => workLogs.filter((x) => x.status !== "deleted"),
-    [workLogs]
-  );
-
-  const activeMaterials = useMemo(
-    () => materials.filter((x) => x.status !== "deleted"),
-    [materials]
+  const activeSites = useMemo(
+    () => sites.filter((site) => site.status !== "deleted" && site.isActive !== false),
+    [sites]
   );
 
   useEffect(() => {
@@ -670,19 +913,48 @@ export default function App() {
   }, [selectedSiteId, activeSites]);
 
   const selectedSite = useMemo(
-    () =>
-      activeSites.find((x) => String(x.id) === String(selectedSiteId)) || null,
+    () => activeSites.find((site) => String(site.id) === String(selectedSiteId)) || null,
     [activeSites, selectedSiteId]
   );
 
-  const selectedSiteCreators = useMemo(
+  const registeredCreators = useMemo(
+    () => (selectedSite ? (siteCreatorsMap[String(selectedSite.id)] || []).map((x) => x.name ?? x) : []),
+    [selectedSite, siteCreatorsMap]
+  );
+
+  const currentWorkLogs = useMemo(
     () =>
       selectedSite
-        ? (siteCreatorsMap[String(selectedSite.id)] || []).map((x) =>
-            typeof x === "string" ? x : x.name
-          )
+        ? workLogs
+            .filter((log) => String(log.siteId) === String(selectedSite.id) && log.status !== "deleted")
+            .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
         : [],
-    [selectedSite, siteCreatorsMap]
+    [selectedSite, workLogs]
+  );
+
+  const currentMaterials = useMemo(
+    () =>
+      selectedSite
+        ? materials
+            .filter((item) => String(item.siteId) === String(selectedSite.id) && item.status !== "deleted")
+            .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+        : [],
+    [selectedSite, materials]
+  );
+
+  const filteredWorkLogs = useMemo(
+    () => currentWorkLogs.filter((log) => !commonCreator || log.creator === commonCreator),
+    [currentWorkLogs, commonCreator]
+  );
+
+  const filteredMaterials = useMemo(
+    () => currentMaterials.filter((item) => !commonCreator || item.creator === commonCreator),
+    [currentMaterials, commonCreator]
+  );
+
+  const selectedSiteCreators = useMemo(
+    () => (selectedSite ? registeredCreators : []),
+    [selectedSite, registeredCreators]
   );
 
   useEffect(() => {
@@ -695,539 +967,19 @@ export default function App() {
     }
   }, [selectedSite, commonCreator, selectedSiteCreators]);
 
-  const managerNameOptions = useMemo(
-    () => activeManagerMasters.map((x) => x.name).filter(Boolean),
-    [activeManagerMasters]
-  );
-
-  const workerNameOptions = useMemo(
-    () => activeWorkerMasters.map((x) => x.name).filter(Boolean),
-    [activeWorkerMasters]
-  );
-
-  const materialNameOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(activeMaterialMasters.map((x) => x.name).filter(Boolean))
-      ),
-    [activeMaterialMasters]
-  );
-
-  const materialThicknessOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          activeMaterialMasters
-            .filter((x) => x.name === materialName)
-            .map((x) => x.thickness)
-            .filter(Boolean)
-        )
-      ),
-    [materialName, activeMaterialMasters]
-  );
-
-  const materialSizeOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          activeMaterialMasters
-            .filter(
-              (x) => x.name === materialName && x.thickness === materialThickness
-            )
-            .map((x) => x.size)
-            .filter(Boolean)
-        )
-      ),
-    [materialName, materialThickness, activeMaterialMasters]
-  );
-
-  const findMaterialMaster = (name, thickness, size) =>
-    activeMaterialMasters.find(
-      (x) => x.name === name && x.thickness === thickness && x.size === size
-    ) || null;
-
-  async function saveSite() {
-    if (!siteName.trim()) return notify("現場名を入力してください");
-
-    if (editingSiteId) {
-      const current = sites.find((s) => String(s.id) === String(editingSiteId));
-      if (!current) return notify("現場が見つかりません");
-
-      const updated = {
-        ...current,
-        name: siteName.trim(),
-        person: sitePerson,
-        updatedAt: nowIso(),
-      };
-
-      setSites((prev) =>
-        prev.map((s) => (String(s.id) === String(editingSiteId) ? updated : s))
-      );
-
-      await queueRecords([toSiteGasRecord(updated)]);
-      setEditingSiteId("");
-      setSiteName("");
-      setSitePerson(managerNameOptions[0] || "");
-      return notify("現場を更新しました");
-    }
-
-    const id = makeId("site");
-    const localSite = {
-      id,
-      recordId: makeId("site_rec"),
-      name: siteName.trim(),
-      person: sitePerson,
-      isActive: true,
-      status: "active",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-
-    setSites((prev) => [localSite, ...prev]);
-    setSelectedSiteId(id);
-
-    await queueRecords([toSiteGasRecord(localSite)]);
-
-    setSiteName("");
-    setSitePerson(managerNameOptions[0] || "");
-    notify("現場を登録しました");
-  }
-
-  function editSite(site) {
-    setEditingSiteId(String(site.id));
-    setSiteName(site.name || "");
-    setSitePerson(site.person || managerNameOptions[0] || "");
-    setScreen("site");
-  }
-
-  function openSite(site) {
-    setSelectedSiteId(String(site.id));
-
-    const creators = siteCreatorsMap[String(site.id)] || [];
-    const firstCreator =
-      creators.length > 0
-        ? typeof creators[0] === "string"
-          ? creators[0]
-          : creators[0].name
-        : "";
-
-    setCommonCreator(firstCreator);
-    setScreen("creator");
-  }
-
-  async function addCreator() {
-    if (!selectedSite) return notify("先に現場を選んでください");
-    const name = String(newCreatorName || "").trim();
-    if (!name) return notify("制作者を選んでください");
-
-    const currentCreators = siteCreatorsMap[String(selectedSite.id)] || [];
-    if (
-      currentCreators.some((x) => (typeof x === "string" ? x : x.name) === name)
-    ) {
-      return notify("この制作者は登録済みです");
-    }
-
-    const creatorRecordId = makeId("site_creator");
-    const createdAt = nowIso();
-
-    setSiteCreatorsMap((prev) => ({
-      ...prev,
-      [String(selectedSite.id)]: [
-        ...(prev[String(selectedSite.id)] || []),
-        {
-          name,
-          recordId: creatorRecordId,
-          createdAt,
-          updatedAt: createdAt,
-        },
-      ],
-    }));
-
-    setCommonCreator(name);
-    setNewCreatorName("");
-
-    await queueRecords([
-      toSiteCreatorGasRecord({
-        siteId: selectedSite.id,
-        siteName: selectedSite.name,
-        manager: selectedSite.person,
-        creator: name,
-        recordId: creatorRecordId,
-        createdAt,
-        updatedAt: createdAt,
-      }),
-    ]);
-    await flushQueue();
-
-    notify("制作者を登録しました");
-  }
-
-  async function saveWork() {
-    if (!selectedSite) return notify("先に現場を選んでください");
-    if (!String(workHours).trim()) return notify("作業時間を入力してください");
-    if (!commonCreator) return notify("制作者を選んでください");
-
-    const hours = Number(workHours || 0);
-    if (!hours) return notify("作業時間を入力してください");
-
-    if (editingWorkId) {
-      const current = workLogs.find((x) => String(x.id) === String(editingWorkId));
-      if (!current) return notify("編集対象が見つかりません");
-
-      const updated = {
-        ...current,
-        date: workDate,
-        creator: commonCreator || "未入力",
-        hours,
-        updatedAt: nowIso(),
-      };
-
-      setWorkLogs((prev) =>
-        prev.map((x) => (String(x.id) === String(editingWorkId) ? updated : x))
-      );
-
-      await queueRecords([toWorkGasRecord(updated, selectedSite)]);
-      await fetchInvoiceSummary();
-
-      setEditingWorkId("");
-      setWorkDate(today());
-      setWorkHours("");
-      return notify("作業を更新しました");
-    }
-
-    const localRecord = {
-      id: makeId("work"),
-      siteId: String(selectedSite.id),
-      date: workDate,
-      creator: commonCreator || "未入力",
-      hours,
-      status: "active",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-
-    setWorkLogs((prev) => [localRecord, ...prev]);
-
-    await queueRecords([toWorkGasRecord(localRecord, selectedSite)]);
-    await fetchInvoiceSummary();
-
-    setWorkDate(today());
-    setWorkHours("");
-    notify("作業を追加しました");
-  }
-
-  async function saveMaterial() {
-    if (!selectedSite) return notify("先に現場を選んでください");
-    if (!commonCreator) return notify("制作者を選んでください");
-    if (!materialName) return notify("材料名を選んでください");
-    if (!materialThickness) return notify("厚みを選んでください");
-    if (!materialSize) return notify("サイズを選んでください");
-    if (!String(materialQty).trim()) return notify("材料枚数を入力してください");
-
-    const qty = Number(materialQty || 0);
-    if (!qty) return notify("材料枚数を入力してください");
-
-    const master = findMaterialMaster(materialName, materialThickness, materialSize);
-
-    if (editingMaterialId) {
-      const current = materials.find(
-        (x) => String(x.id) === String(editingMaterialId)
-      );
-      if (!current) return notify("編集対象が見つかりません");
-
-      const updated = {
-        ...current,
-        date: materialDate,
-        creator: commonCreator || "未入力",
-        name: materialName,
-        thickness: materialThickness,
-        size: materialSize,
-        qty,
-        unitPrice: Number(master?.unit_price || 0),
-        materialId: master?.id || "",
-        updatedAt: nowIso(),
-      };
-
-      setMaterials((prev) =>
-        prev.map((x) => (String(x.id) === String(editingMaterialId) ? updated : x))
-      );
-
-      await queueRecords([toMaterialGasRecord(updated, selectedSite)]);
-      await fetchInvoiceSummary();
-
-      setEditingMaterialId("");
-      setMaterialDate(today());
-      setMaterialName("");
-      setMaterialThickness("");
-      setMaterialSize("");
-      setMaterialQty("");
-      return notify("材料を更新しました");
-    }
-
-    const localRecord = {
-      id: makeId("material"),
-      siteId: String(selectedSite.id),
-      date: materialDate,
-      creator: commonCreator || "未入力",
-      name: materialName,
-      thickness: materialThickness,
-      size: materialSize,
-      qty,
-      unitPrice: Number(master?.unit_price || 0),
-      materialId: master?.id || "",
-      status: "active",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-
-    setMaterials((prev) => [localRecord, ...prev]);
-
-    await queueRecords([toMaterialGasRecord(localRecord, selectedSite)]);
-    await fetchInvoiceSummary();
-
-    setMaterialDate(today());
-    setMaterialName("");
-    setMaterialThickness("");
-    setMaterialSize("");
-    setMaterialQty("");
-    notify("材料を追加しました");
-  }
-
-  function editWork(row) {
-    setEditingWorkId(String(row.id));
-    setWorkDate(row.date || today());
-    setWorkHours(String(row.hours || ""));
-    setCommonCreator(row.creator || "");
-    setScreen("work");
-  }
-
-  async function deleteSite(siteId) {
-    const site = sites.find((s) => String(s.id) === String(siteId));
-    if (!site) return;
-    if (!window.confirm(`現場「${site.name}」を削除しますか？`)) return;
-
-    const now = nowIso();
-    const deletedSite = {
-      ...site,
-      status: "deleted",
-      updatedAt: now,
-    };
-
-    const relatedCreators = siteCreatorsMap[String(siteId)] || [];
-    const relatedWorks = workLogs.filter((x) => String(x.siteId) === String(siteId));
-    const relatedMaterials = materials.filter((x) => String(x.siteId) === String(siteId));
-
-    setSites((prev) =>
-      prev.map((s) => (String(s.id) === String(siteId) ? deletedSite : s))
-    );
-
-    setWorkLogs((prev) =>
-      prev.map((x) =>
-        String(x.siteId) === String(siteId) ? { ...x, status: "deleted", updatedAt: now } : x
-      )
-    );
-
-    setMaterials((prev) =>
-      prev.map((x) =>
-        String(x.siteId) === String(siteId) ? { ...x, status: "deleted", updatedAt: now } : x
-      )
-    );
-
-    setSiteCreatorsMap((prev) => {
-      const next = { ...prev };
-      delete next[String(siteId)];
-      return next;
-    });
-
-    if (String(selectedSiteId) === String(siteId)) {
-      setSelectedSiteId("");
-      setCommonCreator("");
-      setScreen("site");
-    }
-
-    const records = [
-      toSiteGasRecord(deletedSite),
-      ...relatedCreators.map((item) =>
-        toSiteCreatorGasRecord({
-          siteId,
-          siteName: site.name,
-          manager: site.person,
-          creator: item.name,
-          recordId: item.recordId,
-          createdAt: item.createdAt,
-          updatedAt: now,
-          status: "deleted",
-        })
-      ),
-      ...relatedWorks.map((row) =>
-        toWorkGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-      ),
-      ...relatedMaterials.map((row) =>
-        toMaterialGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-      ),
-    ];
-
-    await queueRecords(records);
-    await fetchInvoiceSummary();
-    notify("現場を削除しました");
-  }
-
-  async function deleteCreator(siteId, creator) {
-    const site = sites.find((s) => String(s.id) === String(siteId));
-    if (!site) return;
-    if (!window.confirm(`制作者「${creator}」を削除しますか？`)) return;
-
-    const now = nowIso();
-    const creatorEntry = (siteCreatorsMap[String(siteId)] || []).find(
-      (x) => x.name === creator
-    );
-
-    const relatedWorks = workLogs.filter(
-      (x) => String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-    );
-    const relatedMaterials = materials.filter(
-      (x) => String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-    );
-
-    setWorkLogs((prev) =>
-      prev.map((x) =>
-        String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-          ? { ...x, status: "deleted", updatedAt: now }
-          : x
-      )
-    );
-
-    setMaterials((prev) =>
-      prev.map((x) =>
-        String(x.siteId) === String(siteId) && String(x.creator) === String(creator)
-          ? { ...x, status: "deleted", updatedAt: now }
-          : x
-      )
-    );
-
-    setSiteCreatorsMap((prev) => ({
-      ...prev,
-      [String(siteId)]: (prev[String(siteId)] || []).filter((x) => x.name !== creator),
-    }));
-
-    if (String(selectedSiteId) === String(siteId) && commonCreator === creator) {
-      const nextCreators = (siteCreatorsMap[String(siteId)] || [])
-        .filter((x) => x.name !== creator)
-        .map((x) => x.name);
-      setCommonCreator(nextCreators[0] || "");
-      if (nextCreators.length === 0) {
-        setScreen("creator");
-      }
-    }
-
-    const records = [
-      toSiteCreatorGasRecord({
-        siteId,
-        siteName: site.name,
-        manager: site.person,
-        creator,
-        recordId: creatorEntry?.recordId,
-        createdAt: creatorEntry?.createdAt,
-        updatedAt: now,
-        status: "deleted",
-      }),
-      ...relatedWorks.map((row) =>
-        toWorkGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-      ),
-      ...relatedMaterials.map((row) =>
-        toMaterialGasRecord({ ...row, status: "deleted", updatedAt: now }, site)
-      ),
-    ];
-
-    await queueRecords(records);
-    await flushQueue();
-    await fetchInvoiceSummary();
-    notify("制作者を削除しました");
-  }
-
-  async function deleteWork(id) {
-    const target = workLogs.find((x) => String(x.id) === String(id));
-    if (!target) return;
-
-    const updated = { ...target, status: "deleted", updatedAt: nowIso() };
-
-    setWorkLogs((prev) =>
-      prev.map((x) => (String(x.id) === String(id) ? updated : x))
-    );
-
-    await queueRecords([toWorkGasRecord(updated, selectedSite)]);
-    await fetchInvoiceSummary();
-    notify("作業を削除しました");
-  }
-
-  function editMaterial(row) {
-    setEditingMaterialId(String(row.id));
-    setMaterialDate(row.date || today());
-    setMaterialName(row.name || "");
-    setMaterialThickness(row.thickness || "");
-    setMaterialSize(row.size || "");
-    setMaterialQty(String(row.qty || ""));
-    setCommonCreator(row.creator || "");
-    setScreen("work");
-  }
-
-  async function deleteMaterial(id) {
-    const target = materials.find((x) => String(x.id) === String(id));
-    if (!target) return;
-
-    const updated = { ...target, status: "deleted", updatedAt: nowIso() };
-
-    setMaterials((prev) =>
-      prev.map((x) => (String(x.id) === String(id) ? updated : x))
-    );
-
-    await queueRecords([toMaterialGasRecord(updated, selectedSite)]);
-    await fetchInvoiceSummary();
-    notify("材料を削除しました");
-  }
-
   const creatorCards = useMemo(() => {
     if (!selectedSite) return [];
     return (siteCreatorsMap[String(selectedSite.id)] || []).map((item) => {
-      const name = item.name;
-      const works = activeWorkLogs.filter(
-        (x) =>
-          String(x.siteId) === String(selectedSite.id) &&
-          String(x.creator) === String(name)
-      );
-      const mats = activeMaterials.filter(
-        (x) =>
-          String(x.siteId) === String(selectedSite.id) &&
-          String(x.creator) === String(name)
-      );
+      const name = item.name ?? item;
+      const works = currentWorkLogs.filter((log) => log.creator === name);
+      const mats = currentMaterials.filter((mat) => mat.creator === name);
       return {
         name,
-        recordId: item.recordId,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-        workHoursTotal: works.reduce((sum, x) => sum + Number(x.hours || 0), 0),
-        materialQtyTotal: mats.reduce((sum, x) => sum + Number(x.qty || 0), 0),
+        workHoursTotal: works.reduce((sum, log) => sum + Number(log.hours || 0), 0),
+        materialQtyTotal: mats.reduce((sum, mat) => sum + Number(mat.qty || 0), 0),
       };
     });
-  }, [selectedSite, siteCreatorsMap, activeWorkLogs, activeMaterials]);
-
-  const creatorWorkLogs = useMemo(() => {
-    if (!selectedSite) return [];
-    return activeWorkLogs.filter((x) => {
-      if (String(x.siteId) !== String(selectedSite.id)) return false;
-      if (commonCreator && String(x.creator) !== String(commonCreator)) return false;
-      return true;
-    });
-  }, [selectedSite, commonCreator, activeWorkLogs]);
-
-  const creatorMaterials = useMemo(() => {
-    if (!selectedSite) return [];
-    return activeMaterials.filter((x) => {
-      if (String(x.siteId) !== String(selectedSite.id)) return false;
-      if (commonCreator && String(x.creator) !== String(commonCreator)) return false;
-      return true;
-    });
-  }, [selectedSite, commonCreator, activeMaterials]);
+  }, [selectedSite, siteCreatorsMap, currentWorkLogs, currentMaterials]);
 
   const displayInvoiceRows = useMemo(
     () =>
@@ -1245,21 +997,56 @@ export default function App() {
     [serverInvoiceRows]
   );
 
-  const invoiceSummary = useMemo(
-    () => ({
-      workAmount: Number(serverInvoiceTotals.work_amount || 0),
-      materialAmount: Number(serverInvoiceTotals.material_amount || 0),
-      total: Number(serverInvoiceTotals.total_amount || 0),
-    }),
+  const invoiceTotal = useMemo(
+    () => Number(serverInvoiceTotals.total_amount || 0),
     [serverInvoiceTotals]
   );
 
-  const invoiceTotal = useMemo(() => invoiceSummary.total, [invoiceSummary]);
-  const workInvoiceTotal = useMemo(() => invoiceSummary.workAmount, [invoiceSummary]);
-  const materialInvoiceTotal = useMemo(
-    () => invoiceSummary.materialAmount,
-    [invoiceSummary]
+  const workInvoiceTotal = useMemo(
+    () => Number(serverInvoiceTotals.work_amount || 0),
+    [serverInvoiceTotals]
   );
+
+  const materialInvoiceTotal = useMemo(
+    () => Number(serverInvoiceTotals.material_amount || 0),
+    [serverInvoiceTotals]
+  );
+
+  const resetSiteForm = () => {
+    setSiteName("");
+    setSitePerson(managerNameOptions[0] || "");
+    setEditingSiteId("");
+  };
+
+  const resetWorkForm = () => {
+    setWorkDate(today());
+    setWorkHours("");
+    setEditingWorkId("");
+  };
+
+  const resetMaterialForm = () => {
+    setMaterialDate(today());
+    setMaterialName(materialNameOptions[0] || "");
+    setMaterialThickness("");
+    setMaterialSize("");
+    setMaterialQty("");
+    setEditingMaterialId("");
+  };
+
+  function movePrev() {
+    const order = ["site", "creator", "work", "invoice"];
+    const idx = order.indexOf(screen);
+    if (idx > 0) setScreen(order[idx - 1]);
+  }
+
+  function moveNext() {
+    const order = ["site", "creator", "work", "invoice"];
+    const idx = order.indexOf(screen);
+    if (screen === "site" && !selectedSite) return notify("先に現場を選んでください");
+    if (screen === "creator" && (!selectedSite || registeredCreators.length === 0))
+      return notify("先に制作者を登録してください");
+    if (idx < order.length - 1) setScreen(order[idx + 1]);
+  }
 
   function exportInvoiceCsv() {
     const header = [
@@ -1297,6 +1084,7 @@ export default function App() {
     const blob = new Blob(["\uFEFF" + csv], {
       type: "text/csv;charset=utf-8;",
     });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1305,865 +1093,1235 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  function movePrev() {
-    const order = ["site", "creator", "work", "invoice"];
-    const idx = order.indexOf(screen);
-    if (idx > 0) setScreen(order[idx - 1]);
+  async function handleRegisterCreator() {
+    if (!selectedSite) {
+      notify("先に現場を選んでください");
+      return;
+    }
+
+    const trimmed = String(newCreatorName || "").trim();
+    if (!trimmed) {
+      notify("制作者を選択してください");
+      return;
+    }
+
+    const current = siteCreatorsMap[String(selectedSite.id)] || [];
+    const names = current.map((x) => x.name ?? x);
+    if (names.includes(trimmed)) {
+      notify("この制作者は登録済みです");
+      return;
+    }
+
+    const creatorRecordId = makeId("site_creator");
+    const createdAt = nowIso();
+
+    setSiteCreatorsMap((prev) => ({
+      ...prev,
+      [String(selectedSite.id)]: [
+        ...(prev[String(selectedSite.id)] || []),
+        {
+          name: trimmed,
+          recordId: creatorRecordId,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ],
+    }));
+
+    setCommonCreator(trimmed);
+    setNewCreatorName(workerNameOptions[0] || "");
+
+    await queueRecords([
+      toSiteCreatorGasRecord({
+        siteId: selectedSite.id,
+        siteName: selectedSite.name,
+        manager: selectedSite.person,
+        creator: trimmed,
+        recordId: creatorRecordId,
+        createdAt,
+        updatedAt: createdAt,
+      }),
+    ]);
+
+    notify("制作者を登録しました");
   }
 
-  function moveNext() {
-    const order = ["site", "creator", "work", "invoice"];
-    const idx = order.indexOf(screen);
-    if (screen === "site" && !selectedSite) return notify("先に現場を選んでください");
-    if (screen === "creator" && !commonCreator) return notify("先に制作者を選んでください");
-    if (idx < order.length - 1) setScreen(order[idx + 1]);
+  async function handleSaveSite() {
+    const trimmed = siteName.trim();
+    if (!trimmed) {
+      notify("現場名を入力してください");
+      return;
+    }
+
+    if (editingSiteId) {
+      const current = sites.find((site) => String(site.id) === String(editingSiteId));
+      if (!current) return notify("現場が見つかりません");
+
+      const updated = {
+        ...current,
+        name: trimmed,
+        person: sitePerson,
+        updatedAt: nowIso(),
+      };
+
+      setSites((prev) =>
+        prev.map((site) => (String(site.id) === String(editingSiteId) ? updated : site))
+      );
+
+      await queueRecords([toSiteGasRecord(updated)]);
+      resetSiteForm();
+      notify("現場を更新しました");
+      return;
+    }
+
+    const id = makeId("site");
+    const localSite = {
+      id,
+      recordId: makeId("site_rec"),
+      name: trimmed,
+      person: sitePerson,
+      isActive: true,
+      status: "active",
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    setSites((prev) => [localSite, ...prev]);
+    setSelectedSiteId(id);
+
+    await queueRecords([toSiteGasRecord(localSite)]);
+    resetSiteForm();
+    notify("現場を登録しました");
   }
 
-  const cardStyle = {
-    background: "#fff",
-    border: "1px solid #d9e0ea",
-    borderRadius: 12,
-    boxShadow: "0 4px 12px rgba(17,24,39,0.05)",
-    padding: 10,
-  };
+  function handleEditSite(siteId) {
+    const target = sites.find((site) => String(site.id) === String(siteId));
+    if (!target) return;
+    setEditingSiteId(String(siteId));
+    setSiteName(target.name);
+    setSitePerson(target.person);
+    setScreen("site");
+    notify("現場を編集中です");
+  }
 
-  const inputStyle = {
-    width: "100%",
-    padding: "7px 9px",
-    border: "1px solid #cfd8e3",
-    borderRadius: 8,
-    fontSize: 12,
-    boxSizing: "border-box",
-    background: "#fff",
-  };
+  async function handleSaveWork() {
+    if (!selectedSite) return notify("先に現場を選んでください");
+    if (!String(workHours).trim()) return notify("作業時間を入力してください");
+    if (!commonCreator) return notify("制作者を選んでください");
 
-  const buttonStyle = {
-    padding: "7px 10px",
-    border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: 12,
+    const hours = Number(workHours || 0);
+    if (!hours) return notify("作業時間を入力してください");
+
+    if (editingWorkId) {
+      const current = workLogs.find((log) => String(log.id) === String(editingWorkId));
+      if (!current) return notify("編集対象が見つかりません");
+
+      const updated = {
+        ...current,
+        date: workDate,
+        creator: commonCreator,
+        hours,
+        updatedAt: nowIso(),
+      };
+
+      setWorkLogs((prev) =>
+        prev.map((log) => (String(log.id) === String(editingWorkId) ? updated : log))
+      );
+
+      await queueRecords([toWorkGasRecord(updated, selectedSite)]);
+      await fetchInvoiceSummary();
+      resetWorkForm();
+      notify("作業を更新しました");
+      return;
+    }
+
+    const localRecord = {
+      id: makeId("work"),
+      siteId: String(selectedSite.id),
+      date: workDate,
+      creator: commonCreator,
+      hours,
+      status: "active",
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    setWorkLogs((prev) => [localRecord, ...prev]);
+    await queueRecords([toWorkGasRecord(localRecord, selectedSite)]);
+    await fetchInvoiceSummary();
+    resetWorkForm();
+    notify("作業を追加しました");
+  }
+
+  async function handleSaveMaterial() {
+    if (!selectedSite) return notify("先に現場を選んでください");
+    if (!commonCreator) return notify("制作者を選んでください");
+    if (!materialName) return notify("材料名を選んでください");
+    if (!materialThickness) return notify("厚みを選んでください");
+    if (!materialSize) return notify("サイズを選んでください");
+    if (!String(materialQty).trim()) return notify("材料枚数を入力してください");
+
+    const qty = Number(materialQty || 0);
+    if (!qty) return notify("材料枚数を入力してください");
+
+    const master = findMaterialMaster(materialName, materialThickness, materialSize);
+
+    if (editingMaterialId) {
+      const current = materials.find((item) => String(item.id) === String(editingMaterialId));
+      if (!current) return notify("編集対象が見つかりません");
+
+      const updated = {
+        ...current,
+        date: materialDate,
+        creator: commonCreator,
+        name: materialName,
+        thickness: materialThickness,
+        size: materialSize,
+        qty,
+        unitPrice: Number(master?.unit_price || 0),
+        materialId: master?.id || "",
+        updatedAt: nowIso(),
+      };
+
+      setMaterials((prev) =>
+        prev.map((item) => (String(item.id) === String(editingMaterialId) ? updated : item))
+      );
+
+      await queueRecords([toMaterialGasRecord(updated, selectedSite)]);
+      await fetchInvoiceSummary();
+      resetMaterialForm();
+      notify("材料を更新しました");
+      return;
+    }
+
+    const localRecord = {
+      id: makeId("material"),
+      siteId: String(selectedSite.id),
+      date: materialDate,
+      creator: commonCreator,
+      name: materialName,
+      thickness: materialThickness,
+      size: materialSize,
+      qty,
+      unitPrice: Number(master?.unit_price || 0),
+      materialId: master?.id || "",
+      status: "active",
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    setMaterials((prev) => [localRecord, ...prev]);
+    await queueRecords([toMaterialGasRecord(localRecord, selectedSite)]);
+    await fetchInvoiceSummary();
+    resetMaterialForm();
+    notify("材料を追加しました");
+  }
+
+  function handleEditWork(logId) {
+    const target = workLogs.find((log) => String(log.id) === String(logId));
+    if (!target) return;
+    setEditingMaterialId("");
+    setEditingWorkId(String(target.id));
+    setCommonCreator(target.creator);
+    setWorkDate(target.date);
+    setWorkHours(String(target.hours || ""));
+    notify("作業を編集中です");
+  }
+
+  async function handleDeleteWork(logId) {
+    const target = workLogs.find((log) => String(log.id) === String(logId));
+    if (!target) return;
+
+    const updated = { ...target, status: "deleted", updatedAt: nowIso() };
+    setWorkLogs((prev) =>
+      prev.map((log) => (String(log.id) === String(logId) ? updated : log))
+    );
+
+    if (String(editingWorkId) === String(logId)) resetWorkForm();
+
+    await queueRecords([toWorkGasRecord(updated, selectedSite)]);
+    await fetchInvoiceSummary();
+    notify("作業を削除しました");
+  }
+
+  function handleEditMaterial(itemId) {
+    const target = materials.find((item) => String(item.id) === String(itemId));
+    if (!target) return;
+    setEditingWorkId("");
+    setEditingMaterialId(String(target.id));
+    setCommonCreator(target.creator);
+    setMaterialDate(target.date);
+    setMaterialName(target.name);
+    setMaterialThickness(target.thickness || "");
+    setMaterialSize(target.size);
+    setMaterialQty(String(target.qty || ""));
+    notify("材料を編集中です");
+  }
+
+  async function handleDeleteMaterial(itemId) {
+    const target = materials.find((item) => String(item.id) === String(itemId));
+    if (!target) return;
+
+    const updated = { ...target, status: "deleted", updatedAt: nowIso() };
+    setMaterials((prev) =>
+      prev.map((item) => (String(item.id) === String(itemId) ? updated : item))
+    );
+
+    if (String(editingMaterialId) === String(itemId)) resetMaterialForm();
+
+    await queueRecords([toMaterialGasRecord(updated, selectedSite)]);
+    await fetchInvoiceSummary();
+    notify("材料を削除しました");
+  }
+
+  const pageWrap = {
+    maxWidth: 1180,
+    margin: "0 auto",
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#eef3f8",
-        padding: 8,
-        color: "#1f2937",
-        boxSizing: "border-box",
-      }}
-    >
-      <style>{`
-        * { box-sizing: border-box; }
-        .ga-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-        .ga-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-        .ga-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-        .ga-grid-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
-        .ga-list { display:flex; flex-direction:column; gap:6px; }
-        .ga-btn-secondary { background:#eef4fb; color:#1f2937; }
-        .ga-btn-primary { background:#2f6fec; color:#fff; }
-        .ga-btn-danger { background:#e74c3c; color:#fff; }
-        .ga-btn-dark { background:#111827; color:#fff; }
-        .ga-kpi { background:linear-gradient(180deg,#ffffff 0%,#f7f9fc 100%); border:1px solid #d9e0ea; border-radius:10px; padding:8px; }
-        .ga-table { width:100%; border-collapse:collapse; }
-        .ga-table th, .ga-table td { padding:6px 6px; border-bottom:1px solid #e5e7eb; text-align:left; font-size:11px; white-space:nowrap; }
-        .ga-table th { background:#f8fafc; }
-        .ga-card-button { width:100%; text-align:left; background:#fff; border:1px solid #dbe3ee; border-radius:10px; padding:8px; cursor:pointer; }
-        @media (max-width:980px){
-          .ga-grid-3,.ga-grid-4,.ga-grid-5{ grid-template-columns:1fr; }
-        }
-      `}</style>
-
-      <div style={{ ...cardStyle, marginBottom: 8, padding: 8 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ minHeight: "100vh", background: "#f1f5f9", padding: 16 }}>
+      <div style={pageWrap}>
+        <Card style={{ marginBottom: 16, padding: "12px 16px" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "52px 1fr 52px",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
             <button
-              style={{
-                ...buttonStyle,
-                padding: "4px 12px",
-                fontSize: 34,
-                lineHeight: 1,
-                minWidth: 56,
-                borderRadius: 12,
-              }}
-              className="ga-btn-secondary"
+              type="button"
               onClick={movePrev}
+              disabled={screen === "site"}
+              style={{
+                height: 52,
+                width: 52,
+                borderRadius: 18,
+                border: "none",
+                fontSize: 28,
+                fontWeight: 700,
+                cursor: screen === "site" ? "default" : "pointer",
+                background: screen === "site" ? "#e2e8f0" : "#0f172a",
+                color: screen === "site" ? "#94a3b8" : "#ffffff",
+              }}
             >
               ←
             </button>
 
+            <div style={{ textAlign: "center", fontSize: 14, fontWeight: 700, color: "#475569" }}>
+              {message || " "}
+            </div>
+
             <button
-              style={{
-                ...buttonStyle,
-                padding: "4px 12px",
-                fontSize: 34,
-                lineHeight: 1,
-                minWidth: 56,
-                borderRadius: 12,
-              }}
-              className="ga-btn-secondary"
+              type="button"
               onClick={moveNext}
+              disabled={
+                (screen === "site" && !selectedSite) ||
+                (screen === "creator" && (!selectedSite || registeredCreators.length === 0)) ||
+                screen === "invoice"
+              }
+              style={{
+                height: 52,
+                width: 52,
+                borderRadius: 18,
+                border: "none",
+                fontSize: 28,
+                fontWeight: 700,
+                cursor:
+                  (screen === "site" && !selectedSite) ||
+                  (screen === "creator" && (!selectedSite || registeredCreators.length === 0)) ||
+                  screen === "invoice"
+                    ? "default"
+                    : "pointer",
+                background:
+                  (screen === "site" && !selectedSite) ||
+                  (screen === "creator" && (!selectedSite || registeredCreators.length === 0)) ||
+                  screen === "invoice"
+                    ? "#e2e8f0"
+                    : "#0f172a",
+                color:
+                  (screen === "site" && !selectedSite) ||
+                  (screen === "creator" && (!selectedSite || registeredCreators.length === 0)) ||
+                  screen === "invoice"
+                    ? "#94a3b8"
+                    : "#ffffff",
+              }}
             >
               →
             </button>
           </div>
+        </Card>
 
-          {message ? (
-            <div style={{ fontWeight: 700, color: "#2457c5", fontSize: 12 }}>
-              {message}
+        {screen === "site" && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4, fontSize: 13, color: "#64748b" }}>画面1</div>
+              <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: "#0f172a" }}>
+                現場登録
+              </h1>
+              <p style={{ marginTop: 6, fontSize: 14, color: "#64748b" }}>
+                現場名と担当者を登録し、一覧から制作者選択へ進みます。
+              </p>
             </div>
-          ) : null}
-        </div>
-      </div>
 
-      {screen === "site" && (
-        <>
-          <div style={cardStyle}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>1. 現場登録</h2>
-
-            <div
-              style={{
-                marginTop: 8,
-                display: "grid",
-                gridTemplateColumns: "1.7fr 1fr auto",
-                gap: 8,
-                alignItems: "end",
-              }}
-            >
-              <div>
-                <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>現場名</div>
-                <input
-                  style={inputStyle}
-                  value={siteName}
-                  onChange={(e) => setSiteName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>担当者</div>
-                <select
-                  style={inputStyle}
-                  value={sitePerson}
-                  onChange={(e) => setSitePerson(e.target.value)}
-                >
-                  <option value="">選択してください</option>
-                  {managerNameOptions.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+            <Card style={{ marginBottom: 16, padding: 20 }}>
               <div
-                style={{ display: "flex", alignItems: "end", gap: 6, whiteSpace: "nowrap" }}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 220px 160px",
+                  gap: 16,
+                  alignItems: "end",
+                }}
               >
-                <button style={buttonStyle} className="ga-btn-primary" onClick={saveSite}>
-                  {editingSiteId ? "現場更新" : "現場登録"}
-                </button>
-                {editingSiteId ? (
-                  <button
-                    style={buttonStyle}
-                    className="ga-btn-secondary"
-                    onClick={() => {
-                      setEditingSiteId("");
-                      setSiteName("");
-                      setSitePerson(managerNameOptions[0] || "");
-                    }}
-                  >
-                    取消
-                  </button>
-                ) : null}
+                <div>
+                  <Label>現場名</Label>
+                  <TextField
+                    value={siteName}
+                    onChange={setSiteName}
+                    placeholder="例：東京大丸夜間工事"
+                  />
+                </div>
+
+                <div>
+                  <Label>担当者</Label>
+                  <SelectField
+                    value={sitePerson}
+                    options={managerNameOptions.length ? managerNameOptions : [""]}
+                    onChange={setSitePerson}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  {editingSiteId ? (
+                    <Button onClick={resetSiteForm}>編集をやめる</Button>
+                  ) : null}
+                  <Button primary onClick={handleSaveSite}>
+                    {editingSiteId ? "現場を更新" : "現場を登録"}
+                  </Button>
+                </div>
               </div>
+            </Card>
+
+            <div style={{ marginBottom: 10, fontSize: 14, fontWeight: 700, color: "#334155" }}>
+              登録済み現場
             </div>
-          </div>
 
-          <div style={{ ...cardStyle, marginTop: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>登録済み現場一覧</h2>
-
-            <div className="ga-list" style={{ marginTop: 8 }}>
+            <div style={{ display: "grid", gap: 12 }}>
               {activeSites.length === 0 ? (
-                <div style={{ color: "#6b7280", fontSize: 11 }}>登録済み現場はありません</div>
+                <Card style={{ padding: 20, fontSize: 14, color: "#64748b" }}>
+                  登録済み現場はありません
+                </Card>
               ) : (
                 activeSites.map((site) => {
-                  const works = activeWorkLogs.filter(
-                    (x) => String(x.siteId) === String(site.id)
+                  const siteWorks = workLogs.filter(
+                    (log) => String(log.siteId) === String(site.id) && log.status !== "deleted"
                   );
-                  const mats = activeMaterials.filter(
-                    (x) => String(x.siteId) === String(site.id)
+                  const siteMaterials = materials.filter(
+                    (item) => String(item.siteId) === String(site.id) && item.status !== "deleted"
                   );
-                  const active = String(selectedSiteId) === String(site.id);
 
                   return (
-                    <div
-                      key={site.id}
-                      style={{
-                        border: active ? "2px solid #2f6fec" : "1px solid #dbe3ee",
-                        borderRadius: 10,
-                        background: active ? "#f5f9ff" : "#fff",
-                        padding: 8,
-                      }}
-                    >
+                    <Card key={site.id} style={{ padding: 16 }}>
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          gap: 8,
+                          gridTemplateColumns: "1fr 260px",
+                          gap: 16,
                           alignItems: "center",
                         }}
                       >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}>
+                        <div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
                             {site.name}
+                          </div>
+                          <div style={{ marginTop: 4, fontSize: 13, color: "#64748b" }}>
+                            担当者：{site.person}
                           </div>
                           <div
                             style={{
-                              marginTop: 2,
-                              color: "#4b5563",
+                              marginTop: 10,
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
                               fontSize: 11,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
                             }}
                           >
-                            担当者:{site.person} / 作業:{works.length} / 材料:{mats.length} / 月:
-                            {monthOf(site.createdAt)}
+                            <span
+                              style={{
+                                borderRadius: 999,
+                                background: "#e0f2fe",
+                                padding: "6px 10px",
+                                color: "#334155",
+                              }}
+                            >
+                              作業 {siteWorks.length}件
+                            </span>
+                            <span
+                              style={{
+                                borderRadius: 999,
+                                background: "#dcfce7",
+                                padding: "6px 10px",
+                                color: "#334155",
+                              }}
+                            >
+                              材料 {siteMaterials.length}件
+                            </span>
+                            <span
+                              style={{
+                                borderRadius: 999,
+                                background: "#e2e8f0",
+                                padding: "6px 10px",
+                                color: "#334155",
+                              }}
+                            >
+                              {fmtMonthJa(site.createdAt)}
+                            </span>
                           </div>
                         </div>
 
-                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
-                          <button
-                            style={buttonStyle}
-                            className="ga-btn-secondary"
-                            onClick={() => editSite(site)}
-                          >
-                            編集
-                          </button>
-                          <button
-                            style={buttonStyle}
-                            className="ga-btn-danger"
-                            onClick={() => deleteSite(site.id)}
-                          >
-                            削除
-                          </button>
-                          <button
-                            style={buttonStyle}
-                            className="ga-btn-primary"
-                            onClick={() => openSite(site)}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <Button onClick={() => handleEditSite(site.id)}>編集</Button>
+                          <Button
+                            onClick={() => {
+                              setSelectedSiteId(String(site.id));
+                              setScreen("creator");
+                            }}
                           >
                             開く
-                          </button>
+                          </Button>
                         </div>
                       </div>
-                    </div>
+                    </Card>
                   );
                 })
               )}
             </div>
           </div>
-        </>
-      )}
+        )}
 
-      {screen === "creator" && (
-        <div style={cardStyle}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>2. 制作者選択</h2>
-
-          {!selectedSite ? (
-            <div style={{ marginTop: 8, color: "#6b7280", fontSize: 11 }}>
-              先に現場を選んでください
+        {screen === "creator" && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4, fontSize: 13, color: "#64748b" }}>画面2</div>
+              <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: "#0f172a" }}>
+                制作者選択
+              </h1>
+              <p style={{ marginTop: 6, fontSize: 14, color: "#64748b" }}>
+                その現場で登録した制作者だけを表示し、選ぶとそのまま入力へ進めます。
+              </p>
             </div>
-          ) : (
-            <>
-              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 14 }}>
-                選択中現場: {selectedSite.name}
-              </div>
-              <div style={{ marginTop: 2, color: "#4b5563", fontSize: 11 }}>
-                担当者: {selectedSite.person}
-              </div>
 
-              <div className="ga-grid-3" style={{ marginTop: 8 }}>
-                <div>
-                  <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
-                    新規制作者登録
+            {selectedSite ? (
+              <>
+                <Card style={{ marginBottom: 16, padding: 20 }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
+                    {selectedSite.name}
                   </div>
-                  <select
-                    style={inputStyle}
-                    value={newCreatorName}
-                    onChange={(e) => setNewCreatorName(e.target.value)}
+                  <div style={{ marginTop: 6, fontSize: 14, color: "#64748b" }}>
+                    担当者：{selectedSite.person}
+                  </div>
+                </Card>
+
+                <Card style={{ marginBottom: 16, padding: 20 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 170px",
+                      gap: 16,
+                      alignItems: "end",
+                      marginBottom: 18,
+                    }}
                   >
-                    <option value="">選択してください</option>
-                    {workerNameOptions
-                      .filter(
-                        (name) =>
-                          !(siteCreatorsMap[String(selectedSite?.id)] || []).some(
-                            (x) => (typeof x === "string" ? x : x.name) === name
-                          )
-                      )
-                      .map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
+                    <div>
+                      <Label>新規制作者登録</Label>
+                      <SelectField
+                        value={newCreatorName}
+                        options={workerNameOptions.length ? workerNameOptions : [""]}
+                        onChange={setNewCreatorName}
+                      />
+                    </div>
+                    <Button primary onClick={handleRegisterCreator}>
+                      制作者を登録
+                    </Button>
+                  </div>
 
-                <div style={{ display: "flex", alignItems: "end" }}>
-                  <button style={buttonStyle} className="ga-btn-primary" onClick={addCreator}>
-                    制作者登録
-                  </button>
-                </div>
+                  <div style={{ marginBottom: 10, fontSize: 14, fontWeight: 700, color: "#334155" }}>
+                    制作者を選ぶ
+                  </div>
 
-                <div style={{ display: "flex", alignItems: "end" }}>
-                  <button
-                    style={buttonStyle}
-                    className="ga-btn-secondary"
-                    onClick={() => setScreen("site")}
-                  >
-                    現場へ戻る
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 8,
-                }}
-              >
-                {creatorCards.length === 0 ? (
-                  <div style={{ color: "#6b7280", fontSize: 11 }}>制作者が未登録です</div>
-                ) : (
-                  creatorCards.map((card) => (
+                  {registeredCreators.length === 0 ? (
+                    <Card style={{ padding: 16, fontSize: 14, color: "#64748b" }}>
+                      まだ制作者が登録されていません
+                    </Card>
+                  ) : (
                     <div
-                      key={card.name}
                       style={{
-                        border:
-                          commonCreator === card.name
-                            ? "2px solid #2f6fec"
-                            : "1px solid #dbe3ee",
-                        borderRadius: 10,
-                        background: commonCreator === card.name ? "#f5f9ff" : "#fff",
-                        padding: 8,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: 12,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          gap: 8,
-                          alignItems: "start",
-                        }}
-                      >
-                        <button
-                          className="ga-card-button"
-                          style={{
-                            border: "none",
-                            padding: 0,
-                            background: "transparent",
-                            boxShadow: "none",
-                          }}
-                          onClick={() => {
-                            setCommonCreator(card.name);
-                            setScreen("work");
-                          }}
-                        >
-                          <div style={{ fontSize: 13, fontWeight: 800 }}>{card.name}</div>
-                          <div
+                      {creatorCards.map((card) => {
+                        const active = commonCreator === card.name;
+                        return (
+                          <button
+                            key={card.name}
+                            type="button"
+                            onClick={() => {
+                              setCommonCreator(card.name);
+                              setScreen("work");
+                            }}
                             style={{
-                              marginTop: 4,
-                              fontSize: 11,
-                              color: "#4b5563",
-                              lineHeight: 1.4,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
+                              borderRadius: 18,
+                              border: active ? "1px solid #0f172a" : "1px solid #e2e8f0",
+                              background: active ? "#0f172a" : "#ffffff",
+                              color: active ? "#ffffff" : "#334155",
+                              padding: 16,
+                              textAlign: "left",
+                              cursor: "pointer",
+                              boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
                             }}
                           >
-                            作業時間合計:{fmt(card.workHoursTotal)}h / 材料合計:
-                            {fmt(card.materialQtyTotal)}枚
-                          </div>
-                        </button>
+                            <div style={{ fontSize: 15, fontWeight: 700 }}>{card.name}</div>
+                            <div
+                              style={{
+                                marginTop: 8,
+                                fontSize: 12,
+                                color: active ? "#cbd5e1" : "#64748b",
+                              }}
+                            >
+                              作業 {fmt(card.workHoursTotal)}h / 材料 {fmt(card.materialQtyTotal)}枚
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </>
+            ) : (
+              <Card style={{ padding: 20, fontSize: 14, color: "#64748b" }}>
+                先に現場を選んでください。
+              </Card>
+            )}
+          </div>
+        )}
 
-                        <button
-                          style={buttonStyle}
-                          className="ga-btn-danger"
-                          onClick={() => deleteCreator(selectedSite.id, card.name)}
+        {screen === "work" && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4, fontSize: 13, color: "#64748b" }}>画面3</div>
+              <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: "#0f172a" }}>
+                現場別作業登録
+              </h1>
+              <p style={{ marginTop: 6, fontSize: 14, color: "#64748b" }}>
+                制作者を先に選んでから、作業と材料を登録する流れです。
+              </p>
+            </div>
+
+            {selectedSite ? (
+              <>
+                <Card style={{ marginBottom: 16, padding: 20 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 180px",
+                      gap: 16,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
+                        {selectedSite.name}
+                      </div>
+                      <div style={{ marginTop: 6, fontSize: 14, color: "#64748b" }}>
+                        担当者：{selectedSite.person}
+                      </div>
+                      <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            background: "#e2e8f0",
+                            padding: "6px 10px",
+                            fontSize: 11,
+                            color: "#334155",
+                          }}
                         >
-                          削除
-                        </button>
+                          制作者：{commonCreator || "-"}
+                        </span>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
-      {screen === "work" && (
-        <div style={cardStyle}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>3. 現場別作業登録</h2>
+                    <div>
+                      <Label>対象月</Label>
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        style={{
+                          height: 48,
+                          width: "100%",
+                          borderRadius: 16,
+                          border: "1px solid #e2e8f0",
+                          background: "#ffffff",
+                          padding: "0 14px",
+                          fontSize: 14,
+                          color: "#334155",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </Card>
 
-          {!selectedSite ? (
-            <div style={{ marginTop: 8, color: "#6b7280", fontSize: 11 }}>
-              先に現場を選んでください
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 16,
+                    marginBottom: 16,
+                  }}
+                >
+                  <Card
+                    id="work-form"
+                    style={{
+                      padding: 20,
+                      border: "1px solid #bae6fd",
+                      background: "rgba(14,165,233,0.06)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+                        作業追加
+                      </div>
+                      {editingWorkId ? (
+                        <div
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid #bae6fd",
+                            background: "#ffffff",
+                            padding: "6px 10px",
+                            fontSize: 11,
+                            color: "#334155",
+                          }}
+                        >
+                          編集中
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <Label>日付</Label>
+                        <DateField value={workDate} onChange={setWorkDate} />
+                      </div>
+
+                      <div>
+                        <Label>作業時間</Label>
+                        <NumberField
+                          value={workHours}
+                          onChange={setWorkHours}
+                          step="0.1"
+                          placeholder="例：4.5"
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 16 }}>
+                      <Label>制作者</Label>
+                      <SelectField
+                        value={commonCreator}
+                        options={selectedSiteCreators.length ? selectedSiteCreators : [""]}
+                        onChange={setCommonCreator}
+                      />
+                    </div>
+
+                    <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      {editingWorkId ? (
+                        <Button onClick={resetWorkForm}>編集をやめる</Button>
+                      ) : null}
+                      <Button primary onClick={handleSaveWork}>
+                        {editingWorkId ? "作業を更新" : "作業を追加"}
+                      </Button>
+                    </div>
+                  </Card>
+
+                  <Card
+                    id="material-form"
+                    style={{
+                      padding: 20,
+                      border: "1px solid #bbf7d0",
+                      background: "rgba(34,197,94,0.05)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+                        材料追加
+                      </div>
+                      {editingMaterialId ? (
+                        <div
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid #bbf7d0",
+                            background: "#ffffff",
+                            padding: "6px 10px",
+                            fontSize: 11,
+                            color: "#334155",
+                          }}
+                        >
+                          編集中
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <Label>日付</Label>
+                        <DateField value={materialDate} onChange={setMaterialDate} />
+                      </div>
+
+                      <div>
+                        <Label>材料</Label>
+                        <SelectField
+                          value={materialName}
+                          options={materialNameOptions.length ? materialNameOptions : [""]}
+                          onChange={(value) => {
+                            setMaterialName(value);
+                            setMaterialThickness("");
+                            setMaterialSize("");
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>厚み</Label>
+                        <SelectField
+                          value={materialThickness}
+                          options={materialThicknessOptions.length ? materialThicknessOptions : [""]}
+                          onChange={(value) => {
+                            setMaterialThickness(value);
+                            setMaterialSize("");
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>サイズ</Label>
+                        <SelectField
+                          value={materialSize}
+                          options={materialSizeOptions.length ? materialSizeOptions : [""]}
+                          onChange={setMaterialSize}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>枚数</Label>
+                        <NumberField
+                          value={materialQty}
+                          onChange={setMaterialQty}
+                          step="0.1"
+                          placeholder="例：2.0"
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      {editingMaterialId ? (
+                        <Button onClick={resetMaterialForm}>編集をやめる</Button>
+                      ) : null}
+                      <Button primary onClick={handleSaveMaterial}>
+                        {editingMaterialId ? "材料を更新" : "材料を追加"}
+                      </Button>
+                    </div>
+                  </Card>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 16,
+                    marginBottom: 16,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                        追加済み作業
+                      </div>
+                      <div
+                        style={{
+                          borderRadius: 999,
+                          background: "#e0f2fe",
+                          padding: "6px 10px",
+                          fontSize: 11,
+                          color: "#334155",
+                        }}
+                      >
+                        一覧
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {filteredWorkLogs.length === 0 ? (
+                        <Card style={{ padding: 16, fontSize: 14, color: "#64748b" }}>
+                          この制作者の作業登録はまだありません
+                        </Card>
+                      ) : (
+                        filteredWorkLogs.map((log) => (
+                          <Card
+                            key={log.id}
+                            style={{
+                              padding: 12,
+                              border: "1px solid #bae6fd",
+                              background: "rgba(14,165,233,0.05)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "120px 1fr 90px auto",
+                                gap: 8,
+                                alignItems: "center",
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, color: "#334155" }}>
+                                {fmtDate(log.date)}
+                              </div>
+                              <div style={{ color: "#334155" }}>{log.creator}</div>
+                              <div style={{ textAlign: "right", fontWeight: 700, color: "#0f172a" }}>
+                                {fmt(log.hours)}h
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                                <SmallButton onClick={() => handleEditWork(log.id)}>編集</SmallButton>
+                                <SmallButton danger onClick={() => handleDeleteWork(log.id)}>
+                                  削除
+                                </SmallButton>
+                              </div>
+                            </div>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div
+                      style={{
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                        追加済み材料
+                      </div>
+                      <div
+                        style={{
+                          borderRadius: 999,
+                          background: "#dcfce7",
+                          padding: "6px 10px",
+                          fontSize: 11,
+                          color: "#334155",
+                        }}
+                      >
+                        一覧
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {filteredMaterials.length === 0 ? (
+                        <Card style={{ padding: 16, fontSize: 14, color: "#64748b" }}>
+                          この制作者の材料登録はまだありません
+                        </Card>
+                      ) : (
+                        filteredMaterials.map((item) => (
+                          <Card
+                            key={item.id}
+                            style={{
+                              padding: 12,
+                              border: "1px solid #bbf7d0",
+                              background: "rgba(34,197,94,0.05)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "120px 1fr 90px auto",
+                                gap: 8,
+                                alignItems: "center",
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, color: "#334155" }}>
+                                {fmtDate(item.date)}
+                              </div>
+                              <div style={{ color: "#334155" }}>
+                                {item.name} / {item.thickness} / {item.size}
+                              </div>
+                              <div style={{ textAlign: "right", fontWeight: 700, color: "#0f172a" }}>
+                                {fmt(item.qty)}枚
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                                <SmallButton onClick={() => handleEditMaterial(item.id)}>
+                                  編集
+                                </SmallButton>
+                                <SmallButton danger onClick={() => handleDeleteMaterial(item.id)}>
+                                  削除
+                                </SmallButton>
+                              </div>
+                            </div>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Button primary onClick={() => setScreen("site")} style={{ minWidth: 220 }}>
+                    完了して戻る
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <Card style={{ padding: 20, fontSize: 14, color: "#64748b" }}>
+                先に現場を登録してください。
+              </Card>
+            )}
+          </div>
+        )}
+
+        {screen === "invoice" && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4, fontSize: 13, color: "#64748b" }}>画面4</div>
+              <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: "#0f172a" }}>
+                請求書・集計
+              </h1>
+              <p style={{ marginTop: 6, fontSize: 14, color: "#64748b" }}>
+                月別の請求集計を確認し、CSV出力や印刷ができます。
+              </p>
             </div>
-          ) : (
-            <>
+
+            <Card style={{ padding: 20, marginBottom: 16 }}>
               <div
                 style={{
-                  marginTop: 8,
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  flexWrap: "nowrap",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  overflowX: "auto",
+                  display: "grid",
+                  gridTemplateColumns: "180px 1fr",
+                  gap: 16,
+                  alignItems: "end",
                 }}
               >
-                <span>現場名:{selectedSite.name}</span>
-                <span>担当者:{selectedSite.person}</span>
-                <span>制作者:{commonCreator || "未選択"}</span>
-                <input
-                  style={{ ...inputStyle, width: 120, flex: "0 0 auto" }}
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                />
-              </div>
-
-              <div className="ga-grid-2" style={{ marginTop: 8 }}>
-                <div style={{ ...cardStyle, padding: 8, background: "#f8fbff" }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-                    作業登録
-                  </div>
-                  <div
+                <div>
+                  <Label>月選択</Label>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: 8,
+                      height: 48,
+                      width: "100%",
+                      borderRadius: 16,
+                      border: "1px solid #e2e8f0",
+                      background: "#ffffff",
+                      padding: "0 14px",
+                      fontSize: 14,
+                      color: "#334155",
+                      outline: "none",
                     }}
-                  >
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>日付</div>
-                      <input
-                        style={inputStyle}
-                        type="date"
-                        value={workDate}
-                        onChange={(e) => setWorkDate(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
-                        作業時間
-                      </div>
-                      <input
-                        style={inputStyle}
-                        type="number"
-                        step="0.5"
-                        value={workHours}
-                        onChange={(e) => setWorkHours(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
-                        制作者
-                      </div>
-                      <select
-                        style={inputStyle}
-                        value={commonCreator}
-                        onChange={(e) => setCommonCreator(e.target.value)}
-                      >
-                        <option value="">選択してください</option>
-                        {selectedSiteCreators.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button
-                      style={buttonStyle}
-                      className="ga-btn-primary"
-                      onClick={saveWork}
-                    >
-                      {editingWorkId ? "作業更新" : "作業追加"}
-                    </button>
-                  </div>
+                  />
                 </div>
 
-                <div style={{ ...cardStyle, padding: 8, background: "#fffaf5" }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-                    材料登録
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1.1fr 1.4fr 1fr 1fr 0.7fr",
-                      gap: 8,
-                    }}
-                  >
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>日付</div>
-                      <input
-                        style={inputStyle}
-                        type="date"
-                        value={materialDate}
-                        onChange={(e) => setMaterialDate(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
-                        材料名
-                      </div>
-                      <select
-                        style={inputStyle}
-                        value={materialName}
-                        onChange={(e) => {
-                          setMaterialName(e.target.value);
-                          setMaterialThickness("");
-                          setMaterialSize("");
-                        }}
-                      >
-                        <option value="">選択してください</option>
-                        {materialNameOptions.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
-                        厚み
-                      </div>
-                      <select
-                        style={inputStyle}
-                        value={materialThickness}
-                        onChange={(e) => {
-                          setMaterialThickness(e.target.value);
-                          setMaterialSize("");
-                        }}
-                      >
-                        <option value="">選択してください</option>
-                        {materialThicknessOptions.map((thickness) => (
-                          <option key={thickness} value={thickness}>
-                            {thickness}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>
-                        サイズ
-                      </div>
-                      <select
-                        style={inputStyle}
-                        value={materialSize}
-                        onChange={(e) => setMaterialSize(e.target.value)}
-                      >
-                        <option value="">選択してください</option>
-                        {materialSizeOptions.map((size) => (
-                          <option key={size} value={size}>
-                            {size}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>枚</div>
-                      <input
-                        style={inputStyle}
-                        type="number"
-                        step="0.1"
-                        value={materialQty}
-                        onChange={(e) => setMaterialQty(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button
-                      style={buttonStyle}
-                      className="ga-btn-primary"
-                      onClick={saveMaterial}
-                    >
-                      {editingMaterialId ? "材料更新" : "材料追加"}
-                    </button>
-                  </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "end" }}>
+                  <Button onClick={exportInvoiceCsv}>CSV出力</Button>
+                  <Button dark onClick={() => window.print()}>
+                    A3印刷
+                  </Button>
+                  <Button onClick={() => setScreen("work")}>作業画面へ戻る</Button>
                 </div>
               </div>
 
-              <div className="ga-grid-2" style={{ marginTop: 8 }}>
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-                    作業一覧
-                  </div>
-                  <div style={{ maxHeight: 300, overflow: "auto" }}>
-                    <table className="ga-table">
-                      <thead>
-                        <tr>
-                          <th>日付</th>
-                          <th>制作者</th>
-                          <th>時間</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {creatorWorkLogs.length === 0 ? (
-                          <tr>
-                            <td colSpan="4">作業データがありません</td>
-                          </tr>
-                        ) : (
-                          creatorWorkLogs.map((row) => (
-                            <tr key={row.id}>
-                              <td>{fmtDate(row.date)}</td>
-                              <td>{row.creator}</td>
-                              <td>{fmt(row.hours)}</td>
-                              <td>
-                                <div style={{ display: "flex", gap: 4 }}>
-                                  <button
-                                    style={buttonStyle}
-                                    className="ga-btn-secondary"
-                                    onClick={() => editWork(row)}
-                                  >
-                                    編集
-                                  </button>
-                                  <button
-                                    style={buttonStyle}
-                                    className="ga-btn-danger"
-                                    onClick={() => deleteWork(row.id)}
-                                  >
-                                    削除
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+              {invoiceLoading ? (
+                <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
+                  請求金額を読込中...
                 </div>
+              ) : null}
 
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-                    材料一覧
-                  </div>
-                  <div style={{ maxHeight: 300, overflow: "auto" }}>
-                    <table className="ga-table">
-                      <thead>
-                        <tr>
-                          <th>日付</th>
-                          <th>制作者</th>
-                          <th>材料名</th>
-                          <th>厚み</th>
-                          <th>サイズ</th>
-                          <th>枚数</th>
-                          <th>単価</th>
-                          <th>金額</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {creatorMaterials.length === 0 ? (
-                          <tr>
-                            <td colSpan="9">材料データがありません</td>
-                          </tr>
-                        ) : (
-                          creatorMaterials.map((row) => (
-                            <tr key={row.id}>
-                              <td>{fmtDate(row.date)}</td>
-                              <td>{row.creator}</td>
-                              <td>{row.name}</td>
-                              <td>{row.thickness || ""}</td>
-                              <td>{row.size}</td>
-                              <td>{fmt(row.qty)}</td>
-                              <td>{fmt(row.unitPrice)}</td>
-                              <td>{fmt(row.qty * row.unitPrice * 1.35)}</td>
-                              <td>
-                                <div style={{ display: "flex", gap: 4 }}>
-                                  <button
-                                    style={buttonStyle}
-                                    className="ga-btn-secondary"
-                                    onClick={() => editMaterial(row)}
-                                  >
-                                    編集
-                                  </button>
-                                  <button
-                                    style={buttonStyle}
-                                    className="ga-btn-danger"
-                                    onClick={() => deleteMaterial(row.id)}
-                                  >
-                                    削除
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+              {invoiceError ? (
+                <div style={{ marginTop: 12, fontSize: 13, color: "#dc2626" }}>
+                  {invoiceError}
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {screen === "invoice" && (
-        <div style={cardStyle}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>4. 請求書・集計</h2>
-
-          <div
-            style={{
-              marginTop: 8,
-              display: "grid",
-              gridTemplateColumns: "140px auto",
-              gap: 8,
-              alignItems: "end",
-            }}
-          >
-            <div>
-              <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700 }}>月選択</div>
-              <input
-                style={inputStyle}
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-              />
-            </div>
+              ) : null}
+            </Card>
 
             <div
               style={{
-                display: "flex",
-                gap: 6,
-                flexWrap: "nowrap",
-                justifyContent: "flex-start",
-                alignItems: "end",
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 16,
+                marginBottom: 16,
               }}
             >
-              <button
-                style={buttonStyle}
-                className="ga-btn-secondary"
-                onClick={exportInvoiceCsv}
-              >
-                CSV出力
-              </button>
-              <button
-                style={buttonStyle}
-                className="ga-btn-dark"
-                onClick={() => window.print()}
-              >
-                A3印刷
-              </button>
-              <button
-                style={buttonStyle}
-                className="ga-btn-secondary"
-                onClick={() => setScreen("work")}
-              >
-                作業画面へ戻る
-              </button>
-            </div>
-          </div>
+              <Card style={{ padding: 20 }}>
+                <div style={{ fontSize: 12, color: "#64748b" }}>作業請求額</div>
+                <div style={{ marginTop: 8, fontSize: 24, fontWeight: 800, color: "#0f172a" }}>
+                  {fmt(workInvoiceTotal)}円
+                </div>
+              </Card>
 
-          {invoiceLoading && (
-            <div style={{ fontSize: 11, color: "#666", marginTop: 8 }}>
-              請求金額を読込中...
-            </div>
-          )}
+              <Card style={{ padding: 20 }}>
+                <div style={{ fontSize: 12, color: "#64748b" }}>材料費合計</div>
+                <div style={{ marginTop: 8, fontSize: 24, fontWeight: 800, color: "#0f172a" }}>
+                  {fmt(materialInvoiceTotal)}円
+                </div>
+              </Card>
 
-          {!!invoiceError && (
-            <div style={{ fontSize: 11, color: "#d32f2f", marginTop: 8 }}>
-              {invoiceError}
+              <Card style={{ padding: 20 }}>
+                <div style={{ fontSize: 12, color: "#64748b" }}>請求額</div>
+                <div style={{ marginTop: 8, fontSize: 24, fontWeight: 800, color: "#0f172a" }}>
+                  {fmt(invoiceTotal)}円
+                </div>
+              </Card>
             </div>
-          )}
 
-          <div
-            style={{
-              marginTop: 8,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: 8,
-            }}
-          >
-            <div className="ga-kpi">
-              <div style={{ fontSize: 11, color: "#6b7280" }}>作業請求総額</div>
-              <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>
-                {fmt(workInvoiceTotal)}円
+            <Card style={{ padding: 20 }}>
+              <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                請求一覧
               </div>
-            </div>
-            <div className="ga-kpi">
-              <div style={{ fontSize: 11, color: "#6b7280" }}>材料費合計</div>
-              <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>
-                {fmt(materialInvoiceTotal)}円
-              </div>
-            </div>
-            <div className="ga-kpi">
-              <div style={{ fontSize: 11, color: "#6b7280" }}>請求総額</div>
-              <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>
-                {fmt(invoiceTotal)}円
-              </div>
-            </div>
-          </div>
 
-          <div style={{ ...cardStyle, marginTop: 8 }}>
-            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>請求一覧</div>
-            <div style={{ maxHeight: 420, overflow: "auto" }}>
-              <table className="ga-table">
-                <thead>
-                  <tr>
-                    <th>現場名</th>
-                    <th>担当者</th>
-                    <th>制作者</th>
-                    <th>作業時間</th>
-                    <th>材料枚数</th>
-                    <th>作業請求</th>
-                    <th>材料請求</th>
-                    <th>請求金額</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayInvoiceRows.length === 0 ? (
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    minWidth: 900,
+                  }}
+                >
+                  <thead>
                     <tr>
-                      <td colSpan="8">対象データがありません</td>
+                      {[
+                        "現場名",
+                        "担当者",
+                        "制作者",
+                        "作業時間",
+                        "材料枚数",
+                        "作業請求",
+                        "材料請求",
+                        "請求金額",
+                      ].map((label) => (
+                        <th
+                          key={label}
+                          style={{
+                            padding: "12px 10px",
+                            borderBottom: "1px solid #e2e8f0",
+                            textAlign: "left",
+                            fontSize: 12,
+                            color: "#64748b",
+                            background: "#f8fafc",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {label}
+                        </th>
+                      ))}
                     </tr>
-                  ) : (
-                    displayInvoiceRows.map((row) => (
-                      <tr key={`${row.siteId}_${row.creator}`}>
-                        <td>{row.siteName}</td>
-                        <td>{row.manager}</td>
-                        <td>{row.creator}</td>
-                        <td>{fmt(row.workHoursTotal)}</td>
-                        <td>{fmt(row.materialQtyTotal)}</td>
-                        <td>{fmt(row.workAmount)}円</td>
-                        <td>{fmt(row.materialAmount)}円</td>
-                        <td style={{ fontWeight: 800 }}>{fmt(row.total)}円</td>
+                  </thead>
+                  <tbody>
+                    {displayInvoiceRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          style={{
+                            padding: "16px 10px",
+                            fontSize: 14,
+                            color: "#64748b",
+                          }}
+                        >
+                          対象データがありません
+                        </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      displayInvoiceRows.map((row) => (
+                        <tr key={`${row.siteId}_${row.creator}`}>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {row.siteName}
+                          </td>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {row.manager}
+                          </td>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {row.creator}
+                          </td>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {fmt(row.workHoursTotal)}
+                          </td>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {fmt(row.materialQtyTotal)}
+                          </td>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {fmt(row.workAmount)}円
+                          </td>
+                          <td style={{ padding: "14px 10px", borderBottom: "1px solid #e2e8f0", fontSize: 14 }}>
+                            {fmt(row.materialAmount)}円
+                          </td>
+                          <td
+                            style={{
+                              padding: "14px 10px",
+                              borderBottom: "1px solid #e2e8f0",
+                              fontSize: 14,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {fmt(row.total)}円
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
