@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const APP_VERSION = "v2.9.0-gas-save";
+const APP_VERSION = "v2.9.1-delete-buttons";
 const STORAGE_KEY = "genka-app-mobile-ui-v290";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 const OVERHEAD = 1.35;
@@ -405,13 +405,79 @@ export default function App() {
     setScreen("creator");
   };
 
+  const deleteSite = async (site) => {
+    if (!window.confirm(`現場「${site.name}」を削除しますか？\nこの現場の作業・材料・制作者もアプリ上から削除されます。`)) return;
+
+    const relatedWorks = workLogs.filter((x) => x.siteId === site.id);
+    const relatedMaterials = materials.filter((x) => x.siteId === site.id);
+    const relatedCreators = siteCreatorsMap[site.id] || [];
+
+    setSites((prev) => prev.filter((s) => s.id !== site.id));
+    setWorkLogs((prev) => prev.filter((x) => x.siteId !== site.id));
+    setMaterials((prev) => prev.filter((x) => x.siteId !== site.id));
+    setSiteCreatorsMap((prev) => {
+      const next = { ...prev };
+      delete next[site.id];
+      return next;
+    });
+
+    if (selectedSiteId === site.id) {
+      setSelectedSiteId(null);
+      setSelectedCreator("");
+      setScreen("site");
+    }
+    if (editingSiteId === site.id) resetSiteForm();
+
+    const records = [
+      emptyRecord({ record_id: site.id, entity_type: "site", site_id: site.id, site_name: site.name, manager: site.person, status: "deleted" }),
+      ...relatedCreators.map((creator) =>
+        emptyRecord({ record_id: `site_creator_${site.id}_${creator}`, entity_type: "site_creator", site_id: site.id, site_name: site.name, manager: site.person, creator, status: "deleted" })
+      ),
+      ...relatedWorks.map((x) =>
+        emptyRecord({ record_id: x.id, entity_type: "work", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, work_date: x.date, hours: x.hours, status: "deleted" })
+      ),
+      ...relatedMaterials.map((x) =>
+        emptyRecord({ record_id: x.id, entity_type: "material", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, material_date: x.date, material_name: x.name, material_thickness: x.thickness, material_size: x.size, qty: x.qty, unit_price: x.unitPrice, status: "deleted" })
+      ),
+    ];
+
+    await Promise.all(records.map((record) => postToGas(record)));
+    notify("現場を削除しました");
+  };
+
+  const deleteCreator = async (creatorName) => {
+    if (!selectedSite) return notify("先に現場を選んでください");
+    if (!window.confirm(`制作者「${creatorName}」をこの現場から削除しますか？\n作業・材料の履歴は残します。`)) return;
+
+    setSiteCreatorsMap((prev) => ({
+      ...prev,
+      [selectedSite.id]: (prev[selectedSite.id] || []).filter((name) => name !== creatorName),
+    }));
+
+    if (selectedCreator === creatorName) {
+      const nextCreator = (siteCreatorsMap[selectedSite.id] || []).find((name) => name !== creatorName) || "";
+      setSelectedCreator(nextCreator);
+    }
+
+    await postToGas(emptyRecord({
+      record_id: `site_creator_${selectedSite.id}_${creatorName}`,
+      entity_type: "site_creator",
+      site_id: selectedSite.id,
+      site_name: selectedSite.name,
+      manager: selectedSite.person,
+      creator: creatorName,
+      status: "deleted",
+    }));
+    notify("制作者を削除しました");
+  };
+
   const addCreator = async () => {
     if (!selectedSite) return notify("先に現場を選んでください");
     const current = siteCreatorsMap[selectedSite.id] || [];
     if (current.includes(newCreatorName)) return notify("この制作者は登録済みです");
     setSiteCreatorsMap((prev) => ({ ...prev, [selectedSite.id]: [...(prev[selectedSite.id] || []), newCreatorName] }));
     setSelectedCreator(newCreatorName);
-    await postToGas(emptyRecord({ record_id: makeId("creator"), entity_type: "site_creator", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: newCreatorName }));
+    await postToGas(emptyRecord({ record_id: `site_creator_${selectedSite.id}_${newCreatorName}`, entity_type: "site_creator", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: newCreatorName }));
     notify("制作者を登録しました");
   };
 
@@ -589,6 +655,7 @@ export default function App() {
                     </div>
                     <div className="mini-buttons">
                       <button className="mini ghost" onClick={() => editSite(site)}>編集</button>
+                      <button className="mini danger" onClick={() => deleteSite(site)}>削除</button>
                       <button className="mini dark" onClick={() => openSite(site)}>開く</button>
                     </div>
                   </div>
@@ -619,11 +686,17 @@ export default function App() {
               <div className="creator-grid">
                 {creatorCards.length === 0 && <div className="empty">まだ制作者がいません</div>}
                 {creatorCards.map((x) => (
-                  <button key={x.creator} className={`creator-card ${selectedCreator === x.creator ? "active" : ""}`} onClick={() => { setSelectedCreator(x.creator); setScreen("work"); }}>
-                    <strong>{x.creator}</strong>
-                    <span>作業{x.workCount}件 / {formatNumber(x.workHoursTotal)}時間</span>
-                    <span>材料{x.materialCount}件 / {formatNumber(x.materialQtyTotal)}枚</span>
-                  </button>
+                  <div key={x.creator} className={`creator-card ${selectedCreator === x.creator ? "active" : ""}`}>
+                    <button className="creator-card-main" onClick={() => { setSelectedCreator(x.creator); setScreen("work"); }}>
+                      <strong>{x.creator}</strong>
+                      <span>作業{x.workCount}件 / {formatNumber(x.workHoursTotal)}時間</span>
+                      <span>材料{x.materialCount}件 / {formatNumber(x.materialQtyTotal)}枚</span>
+                    </button>
+                    <div className="mini-buttons creator-actions">
+                      <button className="mini ghost" onClick={() => { setSelectedCreator(x.creator); setScreen("work"); }}>選択</button>
+                      <button className="mini danger" onClick={() => deleteCreator(x.creator)}>削除</button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </section>
@@ -835,11 +908,13 @@ const globalCss = `
   .site-meta { margin-top: 5px; font-size: 14px; color: #7a859d; }
   .mt { margin-top: 16px; }
   .creator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; }
-  .creator-card { min-width: 0; min-height: 82px; border-radius: 16px; padding: 11px; text-align: left; border: 1px solid #dce2ef; background: #fff; color: #08133e; box-shadow: 0 4px 12px rgba(17,24,39,.04); }
+  .creator-card { min-width: 0; min-height: 82px; border-radius: 16px; padding: 10px; text-align: left; border: 1px solid #dce2ef; background: #fff; color: #08133e; box-shadow: 0 4px 12px rgba(17,24,39,.04); }
   .creator-card.active { background: #08133e; color: #fff; border-color: #08133e; }
+  .creator-card-main { display: block; width: 100%; min-width: 0; padding: 0; margin: 0; border: 0; background: transparent; color: inherit; text-align: left; }
   .creator-card strong, .creator-card span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .creator-card strong { font-size: 15px; margin-bottom: 6px; }
   .creator-card span { font-size: 12px; line-height: 1.35; }
+  .creator-actions { margin-top: 9px; justify-content: flex-end; }
   .work-header { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 10px; align-items: end; }
   .month-box { min-width: 0; }
   .pill { display: inline-flex; margin-top: 8px; padding: 7px 12px; border-radius: 999px; background: #eef2f8; color: #5d6881; font-size: 12px; font-weight: 800; }
