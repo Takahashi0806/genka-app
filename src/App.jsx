@@ -587,7 +587,7 @@ select {
 }
 
 input[type="date"] {
-  font-size: 15px !important;
+  font-size: 13px !important;
   padding-left: 10px !important;
   padding-right: 6px !important;
   text-align: center !important;
@@ -1386,12 +1386,12 @@ const styles = {
   },
   input: {
     width: "100%",
-    height: 54,
+    height: 44,
     borderRadius: 18,
     border: "1px solid #d7deea",
     background: "#fff",
     padding: "0 16px",
-    fontSize: 16,
+    fontSize: 14,
     color: "#0a1333",
     outline: "none",
     minWidth: 0,
@@ -1657,7 +1657,7 @@ const styles = {
   },
   inlineFieldRow: {
     display: "grid",
-    gridTemplateColumns: "64px minmax(0, 1fr)",
+    gridTemplateColumns: "48px minmax(0, 1fr)",
     gap: 8,
     alignItems: "center",
     marginBottom: 8,
