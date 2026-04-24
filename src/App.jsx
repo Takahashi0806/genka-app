@@ -546,7 +546,81 @@ export default function App() {
 
   return (
     <div style={styles.app}>
-      <style>{globalCss}</style>
+      <style>{globalCss
+/* ===== スマホ横はみ出し完全対策 ===== */
+.phone,
+.card,
+.listCard,
+.formGrid,
+.twoGrid,
+.logRow {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: hidden !important;
+}
+
+.card,
+.listCard {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+.formGrid {
+  grid-template-columns: 58px minmax(0, 1fr) !important;
+  gap: 10px 8px !important;
+}
+
+.formGrid > input,
+.formGrid > select,
+.formGrid > div,
+.twoGrid input,
+.twoGrid select {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+input,
+select {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+}
+
+input[type="date"] {
+  font-size: 15px !important;
+  padding-left: 10px !important;
+  padding-right: 6px !important;
+  text-align: center !important;
+}
+
+.twoGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 10px 8px !important;
+}
+
+@media (max-width: 430px) {
+  .phone {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .formGrid {
+    grid-template-columns: 54px minmax(0, 1fr) !important;
+  }
+
+  label {
+    font-size: 14px !important;
+  }
+
+  input,
+  select {
+    height: 42px !important;
+    font-size: 15px !important;
+    border-radius: 14px !important;
+    padding-left: 10px !important;
+    padding-right: 8px !important;
+  }
+}}</style>
 
       <div style={styles.page} className="page-tight-mobile">
         <div style={styles.topNav} className="top-nav">
