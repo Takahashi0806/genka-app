@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const APP_VERSION = "v2.9.2-materials-master";
+const APP_VERSION = "v2.9.3-shared-sites";
 const STORAGE_KEY = "genka-app-mobile-ui-v290";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 const OVERHEAD = 1.35;
@@ -132,6 +132,95 @@ function getDeviceId() {
   return id;
 }
 
+
+function toDateValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  if (/^\d{4}\/\d{1,2}\/\d{1,2}/.test(s)) {
+    const [y, m, d] = s.split(/[\/\s]/);
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+  return s.slice(0, 10);
+}
+
+function latestActiveRecords(rows) {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    const recordId = String(r.record_id || "").trim();
+    if (!recordId) return;
+    const prev = map.get(recordId);
+    const prevTime = prev ? new Date(prev.updated_at || prev.created_at || 0).getTime() : -1;
+    const nextTime = new Date(r.updated_at || r.created_at || 0).getTime();
+    if (!prev || nextTime >= prevTime) map.set(recordId, r);
+  });
+  return Array.from(map.values()).filter((r) => String(r.status || "active").toLowerCase() !== "deleted");
+}
+
+function buildAppStateFromDataLogs(rows) {
+  const activeRows = latestActiveRecords(rows);
+  const siteMap = new Map();
+  const creatorMap = {};
+  const nextWorks = [];
+  const nextMaterials = [];
+
+  activeRows.forEach((r) => {
+    const type = String(r.entity_type || "").trim();
+    const siteId = String(r.site_id || "").trim();
+    const siteName = String(r.site_name || "").trim();
+    const manager = String(r.manager || "").trim();
+    const creator = String(r.creator || "").trim();
+
+    if (siteId && siteName && !siteMap.has(siteId)) {
+      siteMap.set(siteId, {
+        id: siteId,
+        name: siteName,
+        person: manager || managers[0],
+        isActive: true,
+        createdAt: toDateValue(r.created_at) || today(),
+      });
+    }
+
+    if (siteId && creator && (type === "site_creator" || type === "work" || type === "material")) {
+      if (!creatorMap[siteId]) creatorMap[siteId] = [];
+      if (!creatorMap[siteId].includes(creator)) creatorMap[siteId].push(creator);
+    }
+
+    if (type === "work") {
+      nextWorks.push({
+        id: String(r.record_id || makeId("work")),
+        siteId,
+        date: toDateValue(r.work_date),
+        creator,
+        hours: String(r.hours || ""),
+      });
+    }
+
+    if (type === "material") {
+      nextMaterials.push({
+        id: String(r.record_id || makeId("material")),
+        siteId,
+        date: toDateValue(r.material_date),
+        creator,
+        materialId: String(r.material_id || ""),
+        name: String(r.material_name || ""),
+        thickness: String(r.material_thickness || ""),
+        size: String(r.material_size || ""),
+        qty: String(r.qty || ""),
+        unitPrice: Number(r.unit_price || 0),
+      });
+    }
+  });
+
+  return {
+    sites: Array.from(siteMap.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
+    siteCreatorsMap: creatorMap,
+    workLogs: nextWorks.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+    materials: nextMaterials.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+  };
+}
+
 function emptyRecord(base) {
   const now = nowIso();
   return {
@@ -242,23 +331,38 @@ export default function App() {
         const data = await res.json();
         if (cancelled) return;
 
-        const rows = data.materials || data.masters?.materials || [];
-        const nextOptions = buildMaterialOptionsFromRows(rows);
-
+        const masterRows = data.materials || data.masters?.materials || [];
+        const nextOptions = buildMaterialOptionsFromRows(masterRows);
         if (nextOptions.length > 0) {
           setMaterialOptions(nextOptions);
           setMaterialName((current) => nextOptions.some((m) => m.name === current) ? current : nextOptions[0].name);
         }
+
+        const logRows = data.data_logs || data.records || [];
+        if (Array.isArray(logRows) && logRows.length > 0) {
+          const nextState = buildAppStateFromDataLogs(logRows);
+          setSites(nextState.sites);
+          setSiteCreatorsMap(nextState.siteCreatorsMap);
+          setWorkLogs(nextState.workLogs);
+          setMaterials(nextState.materials);
+        }
       } catch (error) {
-        console.error("材料マスタ取得エラー", error);
+        console.error("GASデータ取得エラー", error);
       } finally {
         if (!cancelled) setIsMasterLoading(false);
       }
     }
 
     fetchBootstrap();
+
+    const intervalId = window.setInterval(fetchBootstrap, 30000);
+    const onFocus = () => fetchBootstrap();
+    window.addEventListener("focus", onFocus);
+
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
