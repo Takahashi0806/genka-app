@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const APP_VERSION = "v2.9.1-delete-buttons";
+const APP_VERSION = "v2.9.2-materials-master";
 const STORAGE_KEY = "genka-app-mobile-ui-v290";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 const OVERHEAD = 1.35;
@@ -10,7 +10,7 @@ const FUJISHIMA_HOURLY = 2000;
 const workers = ["中畑", "伴", "谷上", "藤島", "堀江", "佐藤幸三"];
 const managers = ["工藤", "片野", "髙橋", "山野寺", "金子", "こうだい", "マナト"];
 
-const materialOptions = [
+const fallbackMaterialOptions = [
   {
     name: "ラワンランバー",
     thicknesses: [
@@ -34,6 +34,55 @@ const materialOptions = [
     ],
   },
 ];
+
+function buildMaterialOptionsFromRows(rows) {
+  const activeRows = Array.isArray(rows)
+    ? rows.filter((r) => {
+        const activeValue = String(r.is_active ?? r.status ?? "TRUE").toLowerCase();
+        return activeValue !== "false" && activeValue !== "deleted";
+      })
+    : [];
+
+  const nameMap = new Map();
+
+  activeRows.forEach((r) => {
+    const name = String(r.name || r.material_name || "").trim();
+    const thickness = String(r.thickness || r.material_thickness || "").trim();
+    const size = String(r.size || r.material_size || "").trim();
+    if (!name || !thickness || !size) return;
+
+    const unitPrice = Number(r.unit_price || r.price || r.unitPrice || 0);
+    const materialId = String(r.id || r.material_id || "").trim();
+    const fullName = String(r.full_name || r.fullName || `${name} ${thickness} ${size}`).trim();
+
+    if (!nameMap.has(name)) {
+      nameMap.set(name, { name, thicknesses: [] });
+    }
+
+    const material = nameMap.get(name);
+    let thicknessGroup = material.thicknesses.find((t) => t.thickness === thickness);
+    if (!thicknessGroup) {
+      thicknessGroup = { thickness, sizes: [] };
+      material.thicknesses.push(thicknessGroup);
+    }
+
+    if (!thicknessGroup.sizes.some((x) => x.size === size && x.unitPrice === unitPrice && x.materialId === materialId)) {
+      thicknessGroup.sizes.push({ size, unitPrice, materialId, fullName });
+    }
+  });
+
+  return Array.from(nameMap.values())
+    .map((m) => ({
+      ...m,
+      thicknesses: m.thicknesses
+        .map((t) => ({
+          ...t,
+          sizes: t.sizes.sort((a, b) => String(a.size).localeCompare(String(b.size), "ja")),
+        }))
+        .sort((a, b) => String(a.thickness).localeCompare(String(b.thickness), "ja")),
+    }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -141,6 +190,8 @@ export default function App() {
   const [siteCreatorsMap, setSiteCreatorsMap] = useState({});
   const [workLogs, setWorkLogs] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [materialOptions, setMaterialOptions] = useState(fallbackMaterialOptions);
+  const [isMasterLoading, setIsMasterLoading] = useState(false);
 
   const [siteName, setSiteName] = useState("");
   const [sitePerson, setSitePerson] = useState(managers[0]);
@@ -156,9 +207,9 @@ export default function App() {
   const [editingWorkId, setEditingWorkId] = useState(null);
 
   const [materialDate, setMaterialDate] = useState(today());
-  const [materialName, setMaterialName] = useState(materialOptions[0].name);
-  const [materialThickness, setMaterialThickness] = useState(materialOptions[0].thicknesses[0].thickness);
-  const [materialSize, setMaterialSize] = useState(materialOptions[0].thicknesses[0].sizes[0].size);
+  const [materialName, setMaterialName] = useState(fallbackMaterialOptions[0].name);
+  const [materialThickness, setMaterialThickness] = useState(fallbackMaterialOptions[0].thicknesses[0].thickness);
+  const [materialSize, setMaterialSize] = useState(fallbackMaterialOptions[0].thicknesses[0].sizes[0].size);
   const [materialQty, setMaterialQty] = useState("");
   const [editingMaterialId, setEditingMaterialId] = useState(null);
 
@@ -178,6 +229,37 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchBootstrap() {
+      setIsMasterLoading(true);
+      try {
+        const url = import.meta.env.DEV ? "/gas" : GAS_URL;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (cancelled) return;
+
+        const rows = data.materials || data.masters?.materials || [];
+        const nextOptions = buildMaterialOptionsFromRows(rows);
+
+        if (nextOptions.length > 0) {
+          setMaterialOptions(nextOptions);
+          setMaterialName((current) => nextOptions.some((m) => m.name === current) ? current : nextOptions[0].name);
+        }
+      } catch (error) {
+        console.error("材料マスタ取得エラー", error);
+      } finally {
+        if (!cancelled) setIsMasterLoading(false);
+      }
+    }
+
+    fetchBootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -344,7 +426,9 @@ export default function App() {
   const invoiceTotalMaterial = invoiceRows.reduce((sum, x) => sum + x.materialAmount, 0);
   const invoiceTotal = invoiceRows.reduce((sum, x) => sum + x.total, 0);
 
-  const getUnitPrice = () => Number(sizeOptions.find((x) => x.size === materialSize)?.unitPrice || 0);
+  const selectedMaterialSizeOption = () => sizeOptions.find((x) => x.size === materialSize) || null;
+  const getUnitPrice = () => Number(selectedMaterialSizeOption()?.unitPrice || 0);
+  const getMaterialId = () => selectedMaterialSizeOption()?.materialId || "";
   const notify = (msg) => window.alert(msg);
 
   const goPrev = () => {
@@ -437,7 +521,7 @@ export default function App() {
         emptyRecord({ record_id: x.id, entity_type: "work", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, work_date: x.date, hours: x.hours, status: "deleted" })
       ),
       ...relatedMaterials.map((x) =>
-        emptyRecord({ record_id: x.id, entity_type: "material", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, material_date: x.date, material_name: x.name, material_thickness: x.thickness, material_size: x.size, qty: x.qty, unit_price: x.unitPrice, status: "deleted" })
+        emptyRecord({ record_id: x.id, entity_type: "material", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, material_date: x.date, material_id: x.materialId || "", material_name: x.name, material_thickness: x.thickness, material_size: x.size, qty: x.qty, unit_price: x.unitPrice, status: "deleted" })
       ),
     ];
 
@@ -553,9 +637,10 @@ export default function App() {
       size: materialSize,
       qty: String(materialQty),
       unitPrice: getUnitPrice(),
+      materialId: getMaterialId(),
     };
 
-    const record = emptyRecord({ record_id: row.id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: selectedCreator, material_date: materialDate, material_name: materialName, material_thickness: materialThickness, material_size: materialSize, qty: String(materialQty), unit_price: getUnitPrice() });
+    const record = emptyRecord({ record_id: row.id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: selectedCreator, material_date: materialDate, material_id: getMaterialId(), material_name: materialName, material_thickness: materialThickness, material_size: materialSize, qty: String(materialQty), unit_price: getUnitPrice() });
 
     if (editingMaterialId) {
       setMaterials((prev) => prev.map((x) => (x.id === editingMaterialId ? row : x)));
@@ -585,7 +670,7 @@ export default function App() {
     const target = materials.find((x) => x.id === id);
     setMaterials((prev) => prev.filter((x) => x.id !== id));
     if (target && selectedSite) {
-      await postToGas(emptyRecord({ record_id: id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: target.creator, material_date: target.date, material_name: target.name, material_thickness: target.thickness, material_size: target.size, qty: target.qty, unit_price: target.unitPrice, status: "deleted" }));
+      await postToGas(emptyRecord({ record_id: id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: target.creator, material_date: target.date, material_id: target.materialId || "", material_name: target.name, material_thickness: target.thickness, material_size: target.size, qty: target.qty, unit_price: target.unitPrice, status: "deleted" }));
     }
     if (editingMaterialId === id) clearMaterialForm();
   };
@@ -744,6 +829,7 @@ export default function App() {
 
               <section className={`panel green ${editingMaterialId ? "editing" : ""}`}>
                 <h2 className="panel-title">材料追加</h2>
+                {isMasterLoading && <div className="master-loading">材料マスタ読込中...</div>}
                 <div className="inline-row">
                   <label>日付</label>
                   <input className="compact-input date-input" type="date" value={materialDate} onChange={(e) => setMaterialDate(e.target.value)} />
@@ -880,6 +966,7 @@ const globalCss = `
   .panel.green { background: #f4fbf4; border-color: #dcf0dc; }
   .editing { box-shadow: 0 0 0 2px #87b8ff inset; }
   .section-title, .panel-title { margin: 0 0 12px; font-size: 17px; font-weight: 900; color: #08133e; }
+  .master-loading { margin: -4px 0 8px; font-size: 12px; font-weight: 800; color: #6b7690; }
   .label, .inline-row label, .grid-2 label { display: block; font-size: 13px; font-weight: 800; color: #68748e; margin-bottom: 6px; white-space: nowrap; }
   .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .field-grid.compact { align-items: end; }
