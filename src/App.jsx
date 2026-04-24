@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const APP_VERSION = "v2.8.0";
-const STORAGE_KEY = "genka-app-mobile-ui-v280";
+const APP_VERSION = "v2.9.0-gas-save";
+const STORAGE_KEY = "genka-app-mobile-ui-v290";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 const OVERHEAD = 1.35;
 const BASE_HOURLY = 2300;
 const FUJISHIMA_HOURLY = 2000;
@@ -66,6 +67,62 @@ function toMonthLabel(v) {
 
 function getHourlyRate(name) {
   return name === "藤島" ? FUJISHIMA_HOURLY : BASE_HOURLY;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function getDeviceId() {
+  const key = "genka-device-id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = makeId("device");
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+function emptyRecord(base) {
+  const now = nowIso();
+  return {
+    record_id: base.record_id || "",
+    entity_type: base.entity_type || "",
+    site_id: base.site_id || "",
+    site_name: base.site_name || "",
+    manager: base.manager || "",
+    creator: base.creator || "",
+    work_date: base.work_date || "",
+    material_date: base.material_date || "",
+    hours: base.hours || "",
+    material_id: base.material_id || "",
+    material_name: base.material_name || "",
+    material_thickness: base.material_thickness || "",
+    material_size: base.material_size || "",
+    qty: base.qty || "",
+    unit_price: base.unit_price || "",
+    status: base.status || "active",
+    created_at: base.created_at || now,
+    updated_at: now,
+    device_id: getDeviceId(),
+    updated_by: base.updated_by || "app",
+  };
+}
+
+async function postToGas(record) {
+  const url = import.meta.env.DEV ? "/gas" : GAS_URL;
+  try {
+    await fetch(url, {
+      method: "POST",
+      mode: import.meta.env.DEV ? "cors" : "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(record),
+    });
+    return true;
+  } catch (error) {
+    console.error("GAS送信エラー", error, record);
+    return false;
+  }
 }
 
 function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
@@ -308,11 +365,13 @@ export default function App() {
     setEditingSiteId(null);
   };
 
-  const saveSite = () => {
+  const saveSite = async () => {
     if (!siteName.trim()) return notify("現場名を入力してください");
 
     if (editingSiteId) {
-      setSites((prev) => prev.map((s) => (s.id === editingSiteId ? { ...s, name: siteName.trim(), person: sitePerson } : s)));
+      const updatedSite = { id: editingSiteId, name: siteName.trim(), person: sitePerson, isActive: true, createdAt: today() };
+      setSites((prev) => prev.map((s) => (s.id === editingSiteId ? { ...s, name: updatedSite.name, person: updatedSite.person } : s)));
+      await postToGas(emptyRecord({ record_id: editingSiteId, entity_type: "site", site_id: editingSiteId, site_name: updatedSite.name, manager: updatedSite.person }));
       resetSiteForm();
       notify("現場を更新しました");
       return;
@@ -327,6 +386,7 @@ export default function App() {
     };
     setSites((prev) => [newSite, ...prev]);
     setSiteCreatorsMap((prev) => ({ ...prev, [newSite.id]: [] }));
+    await postToGas(emptyRecord({ record_id: newSite.id, entity_type: "site", site_id: newSite.id, site_name: newSite.name, manager: newSite.person, created_at: newSite.createdAt }));
     resetSiteForm();
     notify("現場を登録しました");
   };
@@ -345,12 +405,13 @@ export default function App() {
     setScreen("creator");
   };
 
-  const addCreator = () => {
+  const addCreator = async () => {
     if (!selectedSite) return notify("先に現場を選んでください");
     const current = siteCreatorsMap[selectedSite.id] || [];
     if (current.includes(newCreatorName)) return notify("この制作者は登録済みです");
     setSiteCreatorsMap((prev) => ({ ...prev, [selectedSite.id]: [...(prev[selectedSite.id] || []), newCreatorName] }));
     setSelectedCreator(newCreatorName);
+    await postToGas(emptyRecord({ record_id: makeId("creator"), entity_type: "site_creator", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: newCreatorName }));
     notify("制作者を登録しました");
   };
 
@@ -360,7 +421,7 @@ export default function App() {
     setEditingWorkId(null);
   };
 
-  const saveWork = () => {
+  const saveWork = async () => {
     if (!selectedSite) return notify("先に現場を選んでください");
     if (!selectedCreator) return notify("先に制作者を選んでください");
     if (!workHours) return notify("作業時間を入力してください");
@@ -373,13 +434,17 @@ export default function App() {
       hours: String(workHours),
     };
 
+    const record = emptyRecord({ record_id: row.id, entity_type: "work", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: selectedCreator, work_date: workDate, hours: String(workHours) });
+
     if (editingWorkId) {
       setWorkLogs((prev) => prev.map((x) => (x.id === editingWorkId ? row : x)));
+      await postToGas(record);
       clearWorkForm();
       notify("作業を更新しました");
       return;
     }
     setWorkLogs((prev) => [row, ...prev]);
+    await postToGas(record);
     clearWorkForm();
     notify("作業を追加しました");
   };
@@ -391,9 +456,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const deleteWork = (id) => {
+  const deleteWork = async (id) => {
     if (!window.confirm("この作業を削除しますか？")) return;
+    const target = workLogs.find((x) => x.id === id);
     setWorkLogs((prev) => prev.filter((x) => x.id !== id));
+    if (target && selectedSite) {
+      await postToGas(emptyRecord({ record_id: id, entity_type: "work", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: target.creator, work_date: target.date, hours: target.hours, status: "deleted" }));
+    }
     if (editingWorkId === id) clearWorkForm();
   };
 
@@ -403,7 +472,7 @@ export default function App() {
     setEditingMaterialId(null);
   };
 
-  const saveMaterial = () => {
+  const saveMaterial = async () => {
     if (!selectedSite) return notify("先に現場を選んでください");
     if (!selectedCreator) return notify("先に制作者を選んでください");
     if (!materialQty) return notify("材料枚数を入力してください");
@@ -420,13 +489,17 @@ export default function App() {
       unitPrice: getUnitPrice(),
     };
 
+    const record = emptyRecord({ record_id: row.id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: selectedCreator, material_date: materialDate, material_name: materialName, material_thickness: materialThickness, material_size: materialSize, qty: String(materialQty), unit_price: getUnitPrice() });
+
     if (editingMaterialId) {
       setMaterials((prev) => prev.map((x) => (x.id === editingMaterialId ? row : x)));
+      await postToGas(record);
       clearMaterialForm();
       notify("材料を更新しました");
       return;
     }
     setMaterials((prev) => [row, ...prev]);
+    await postToGas(record);
     clearMaterialForm();
     notify("材料を追加しました");
   };
@@ -441,9 +514,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const deleteMaterial = (id) => {
+  const deleteMaterial = async (id) => {
     if (!window.confirm("この材料を削除しますか？")) return;
+    const target = materials.find((x) => x.id === id);
     setMaterials((prev) => prev.filter((x) => x.id !== id));
+    if (target && selectedSite) {
+      await postToGas(emptyRecord({ record_id: id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: target.creator, material_date: target.date, material_name: target.name, material_thickness: target.thickness, material_size: target.size, qty: target.qty, unit_price: target.unitPrice, status: "deleted" }));
+    }
     if (editingMaterialId === id) clearMaterialForm();
   };
 
