@@ -77,14 +77,6 @@ function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") 
   URL.revokeObjectURL(url);
 }
 
-function safeJsonParse(raw, fallback) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
 export default function App() {
   const [screen, setScreen] = useState("site");
 
@@ -99,6 +91,7 @@ export default function App() {
 
   const [selectedSiteId, setSelectedSiteId] = useState(null);
   const [selectedCreator, setSelectedCreator] = useState("");
+
   const [newCreatorName, setNewCreatorName] = useState(workers[0]);
 
   const [targetMonth, setTargetMonth] = useState(monthValue());
@@ -119,15 +112,17 @@ export default function App() {
   const [selectedYear, setSelectedYear] = useState(yearValue());
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const data = safeJsonParse(raw, null);
-    if (!data) return;
-
-    setSites(Array.isArray(data.sites) ? data.sites : []);
-    setSiteCreatorsMap(data.siteCreatorsMap && typeof data.siteCreatorsMap === "object" ? data.siteCreatorsMap : {});
-    setWorkLogs(Array.isArray(data.workLogs) ? data.workLogs : []);
-    setMaterials(Array.isArray(data.materials) ? data.materials : []);
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      setSites(data.sites || []);
+      setSiteCreatorsMap(data.siteCreatorsMap || {});
+      setWorkLogs(data.workLogs || []);
+      setMaterials(data.materials || []);
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
   useEffect(() => {
@@ -167,7 +162,7 @@ export default function App() {
     if (!exists) {
       setMaterialSize(foundThickness.sizes[0]?.size || "");
     }
-  }, [materialThickness, materialSize, thicknessOptions]);
+  }, [materialThickness, thicknessOptions, materialSize]);
 
   const selectedMonthWorkLogs = useMemo(() => {
     if (!selectedSite || !selectedCreator) return [];
@@ -189,22 +184,33 @@ export default function App() {
     );
   }, [materials, selectedSite, selectedCreator, targetMonth]);
 
+  const monthWorkHoursTotal = useMemo(
+    () => selectedMonthWorkLogs.reduce((sum, x) => sum + Number(x.hours || 0), 0),
+    [selectedMonthWorkLogs]
+  );
+
+  const monthMaterialQtyTotal = useMemo(
+    () => selectedMonthMaterials.reduce((sum, x) => sum + Number(x.qty || 0), 0),
+    [selectedMonthMaterials]
+  );
+
   const siteSummaries = useMemo(() => {
     return sites.map((site) => {
-      const ownWorkLogs = workLogs.filter((x) => x.siteId === site.id);
-      const ownMaterials = materials.filter((x) => x.siteId === site.id);
-
+      const workCount = workLogs.filter((x) => x.siteId === site.id).length;
+      const materialCount = materials.filter((x) => x.siteId === site.id).length;
       const months = [
-        ...new Set([
-          ...ownWorkLogs.map((x) => (x.date || "").slice(0, 7)),
-          ...ownMaterials.map((x) => (x.date || "").slice(0, 7)),
-        ].filter(Boolean)),
+        ...new Set(
+          [
+            ...workLogs.filter((x) => x.siteId === site.id).map((x) => (x.date || "").slice(0, 7)),
+            ...materials.filter((x) => x.siteId === site.id).map((x) => (x.date || "").slice(0, 7)),
+          ].filter(Boolean)
+        ),
       ];
 
       return {
         ...site,
-        workCount: ownWorkLogs.length,
-        materialCount: ownMaterials.length,
+        workCount,
+        materialCount,
         latestMonth: months.sort().reverse()[0] || "-",
       };
     });
@@ -213,7 +219,6 @@ export default function App() {
   const creatorCards = useMemo(() => {
     if (!selectedSite) return [];
     const creators = siteCreatorsMap[selectedSite.id] || [];
-
     return creators.map((creator) => {
       const ownWorks = workLogs.filter((x) => x.siteId === selectedSite.id && x.creator === creator);
       const ownMaterials = materials.filter((x) => x.siteId === selectedSite.id && x.creator === creator);
@@ -254,7 +259,6 @@ export default function App() {
       const date = x.date || "";
       const hit = invoiceViewMode === "month" ? date.slice(0, 7) === selectedMonth : date.slice(0, 4) === selectedYear;
       if (!hit) return;
-
       const key = `${x.siteId}__${x.creator}`;
       if (!rowMap[key]) {
         const site = sites.find((s) => s.id === x.siteId);
@@ -272,7 +276,6 @@ export default function App() {
           total: 0,
         };
       }
-
       const rate = getHourlyRate(x.creator);
       rowMap[key].workHoursTotal += Number(x.hours || 0);
       rowMap[key].workCount += 1;
@@ -283,7 +286,6 @@ export default function App() {
       const date = x.date || "";
       const hit = invoiceViewMode === "month" ? date.slice(0, 7) === selectedMonth : date.slice(0, 4) === selectedYear;
       if (!hit) return;
-
       const key = `${x.siteId}__${x.creator}`;
       if (!rowMap[key]) {
         const site = sites.find((s) => s.id === x.siteId);
@@ -301,7 +303,6 @@ export default function App() {
           total: 0,
         };
       }
-
       rowMap[key].materialQtyTotal += Number(x.qty || 0);
       rowMap[key].materialCount += 1;
       rowMap[key].materialAmount += Number(x.qty || 0) * Number(x.unitPrice || 0) * OVERHEAD;
@@ -313,10 +314,7 @@ export default function App() {
         total: row.workAmount + row.materialAmount,
       }))
       .filter(
-        (row) =>
-          row.workCount > 0 ||
-          row.materialCount > 0 ||
-          (siteCreatorsMap[row.siteId] || []).includes(row.creator)
+        (row) => row.workCount > 0 || row.materialCount > 0 || (siteCreatorsMap[row.siteId] || []).includes(row.creator)
       )
       .sort((a, b) => {
         if (a.siteName !== b.siteName) return a.siteName.localeCompare(b.siteName, "ja");
@@ -327,11 +325,6 @@ export default function App() {
   const invoiceTotalWork = invoiceRows.reduce((sum, x) => sum + x.workAmount, 0);
   const invoiceTotalMaterial = invoiceRows.reduce((sum, x) => sum + x.materialAmount, 0);
   const invoiceTotal = invoiceRows.reduce((sum, x) => sum + x.total, 0);
-
-  const selectedMonthWorkHoursTotal = selectedMonthWorkLogs.reduce((sum, x) => sum + Number(x.hours || 0), 0);
-  const selectedMonthMaterialQtyTotal = selectedMonthMaterials.reduce((sum, x) => sum + Number(x.qty || 0), 0);
-
-  const notify = (msg) => window.alert(msg);
 
   const goPrev = () => {
     if (screen === "creator") setScreen("site");
@@ -345,6 +338,8 @@ export default function App() {
     if (screen === "work") setScreen("invoice");
   };
 
+  const notify = (msg) => window.alert(msg);
+
   const resetSiteForm = () => {
     setSiteName("");
     setSitePerson(managers[0]);
@@ -355,9 +350,7 @@ export default function App() {
     if (!siteName.trim()) return notify("現場名を入力してください");
 
     if (editingSiteId) {
-      setSites((prev) =>
-        prev.map((s) => (s.id === editingSiteId ? { ...s, name: siteName.trim(), person: sitePerson } : s))
-      );
+      setSites((prev) => prev.map((s) => (s.id === editingSiteId ? { ...s, name: siteName.trim(), person: sitePerson } : s)));
       resetSiteForm();
       notify("現場を更新しました");
       return;
@@ -395,7 +388,6 @@ export default function App() {
     if (!selectedSite) return notify("先に現場を選んでください");
     const current = siteCreatorsMap[selectedSite.id] || [];
     if (current.includes(newCreatorName)) return notify("この制作者は登録済みです");
-
     setSiteCreatorsMap((prev) => ({
       ...prev,
       [selectedSite.id]: [...(prev[selectedSite.id] || []), newCreatorName],
@@ -557,9 +549,8 @@ export default function App() {
       <style>{globalCss}</style>
 
       <div style={styles.page} className="page-tight-mobile">
-        <div style={styles.topNav} className="top-nav screen-only">
+        <div style={styles.topNav} className="top-nav">
           <button
-            type="button"
             style={{
               ...styles.navButton,
               opacity: screen === "site" ? 0.35 : 1,
@@ -572,7 +563,6 @@ export default function App() {
           </button>
 
           <button
-            type="button"
             style={{
               ...styles.navButton,
               opacity: screen === "invoice" ? 0.35 : 1,
@@ -619,11 +609,11 @@ export default function App() {
               </div>
 
               <div style={styles.buttonRow} className="button-row">
-                <button type="button" style={styles.primaryButton} onClick={saveSite}>
+                <button style={styles.primaryButton} onClick={saveSite}>
                   {editingSiteId ? "現場を更新" : "現場を登録"}
                 </button>
                 {editingSiteId && (
-                  <button type="button" style={styles.ghostButton} onClick={resetSiteForm}>
+                  <button style={styles.ghostButton} onClick={resetSiteForm}>
                     キャンセル
                   </button>
                 )}
@@ -637,22 +627,17 @@ export default function App() {
                 {siteSummaries.map((site) => (
                   <div key={site.id} style={styles.siteItem} className="site-item">
                     <div style={styles.siteItemMain}>
-                      <div style={styles.siteNameCompact} title={`${site.name} / ${site.person}`}>
-                        {site.name}
-                      </div>
-                      <div style={styles.siteMetaCompact}>
-                        <span>{site.person}</span>
-                        <span>作業{site.workCount}件</span>
-                        <span>材料{site.materialCount}件</span>
-                        <span>作成月{site.latestMonth === "-" ? "-" : toMonthLabel(site.latestMonth)}</span>
+                      <div style={styles.siteNameCompact}>
+                        {site.name}　/　{site.person}　/　作業{site.workCount}件　/　材料{site.materialCount}件　/　作成月
+                        {site.latestMonth === "-" ? "-" : toMonthLabel(site.latestMonth)}
                       </div>
                     </div>
 
-                    <div style={styles.inlineButtonRow} className="button-row">
-                      <button type="button" style={styles.ghostButtonSmall} onClick={() => editSite(site)}>
+                    <div style={styles.buttonRowInline} className="button-row">
+                      <button style={styles.ghostButtonSmall} onClick={() => editSite(site)}>
                         編集
                       </button>
-                      <button type="button" style={styles.primaryButtonSmall} onClick={() => openSite(site)}>
+                      <button style={styles.primaryButtonSmall} onClick={() => openSite(site)}>
                         開く
                       </button>
                     </div>
@@ -688,12 +673,12 @@ export default function App() {
                   ))}
                 </select>
 
-                <button type="button" style={styles.primaryButton} onClick={addCreator}>
+                <button style={styles.primaryButton} onClick={addCreator}>
                   制作者を登録
                 </button>
               </div>
 
-              <div style={styles.subSectionLabel}>制作者を選ぶ</div>
+              <div style={{ ...styles.label, marginTop: 18 }}>制作者を選ぶ</div>
 
               <div style={styles.creatorGrid} className="creator-grid">
                 {creatorCards.length === 0 && <div style={styles.empty}>まだ制作者がいません</div>}
@@ -702,7 +687,6 @@ export default function App() {
                   return (
                     <button
                       key={x.creator}
-                      type="button"
                       className="creator-card-fix"
                       onClick={() => selectCreatorCard(x.creator)}
                       style={{
@@ -713,8 +697,8 @@ export default function App() {
                       }}
                     >
                       <div style={styles.creatorName}>{x.creator}</div>
-                      <div style={styles.creatorMetaLine}>作業 {formatNumber(x.workHoursTotal)}時間 / {x.workCount}件</div>
-                      <div style={styles.creatorMetaLine}>材料 {formatNumber(x.materialQtyTotal)}枚 / {x.materialCount}件</div>
+                      <div style={styles.creatorMeta}>作業{x.workCount}件 / {formatNumber(x.workHoursTotal)}時間</div>
+                      <div style={styles.creatorMeta}>材料{x.materialCount}件 / {formatNumber(x.materialQtyTotal)}枚</div>
                     </button>
                   );
                 })}
@@ -727,7 +711,6 @@ export default function App() {
           <>
             <div style={styles.screenLabel}>画面3</div>
             <h1 style={styles.title}>現場別作業登録</h1>
-            <p style={styles.subTitle}>制作者を選んだ状態で、作業と材料を登録します。</p>
 
             <div style={styles.card}>
               <div style={styles.infoTop} className="field-grid">
@@ -747,9 +730,9 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={styles.workSummaryRow}>
-                <div style={styles.summaryMiniChip}>作業 {selectedMonthWorkLogs.length}件 / {formatNumber(selectedMonthWorkHoursTotal)}時間</div>
-                <div style={styles.summaryMiniChip}>材料 {selectedMonthMaterials.length}件 / {formatNumber(selectedMonthMaterialQtyTotal)}枚</div>
+              <div style={styles.kpiWrapCompact}>
+                <div style={styles.kpiChip}>作業{selectedMonthWorkLogs.length}件 / {formatNumber(monthWorkHoursTotal)}時間</div>
+                <div style={styles.kpiChip}>材料{selectedMonthMaterials.length}件 / {formatNumber(monthMaterialQtyTotal)}枚</div>
               </div>
             </div>
 
@@ -791,8 +774,8 @@ export default function App() {
                   <input style={styles.compactInput} value={selectedCreator || ""} readOnly />
                 </div>
 
-                <div style={styles.buttonRow} className="button-row">
-                  <button type="button" style={styles.primaryButton} onClick={saveWork}>
+                <div style={styles.buttonRowCompact} className="button-row">
+                  <button style={styles.primaryButtonCompact} onClick={saveWork}>
                     {editingWorkId ? "作業を更新" : "作業を追加"}
                   </button>
                 </div>
@@ -833,55 +816,57 @@ export default function App() {
                   </select>
                 </div>
 
-                <div className="inline-field-row" style={styles.inlineFieldRow}>
-                  <div className="inline-field-label" style={styles.inlineLabel}>厚み</div>
-                  <select
-                    style={styles.compactInput}
-                    value={materialThickness}
-                    onChange={(e) => setMaterialThickness(e.target.value)}
-                  >
-                    {thicknessOptions.map((t) => (
-                      <option key={t.thickness} value={t.thickness}>
-                        {t.thickness}
-                      </option>
-                    ))}
-                  </select>
+                <div style={styles.materialGrid2} className="material-grid-2">
+                  <div>
+                    <div style={styles.inlineLabelGrid}>厚み</div>
+                    <select
+                      style={styles.compactInput}
+                      value={materialThickness}
+                      onChange={(e) => setMaterialThickness(e.target.value)}
+                    >
+                      {thicknessOptions.map((t) => (
+                        <option key={t.thickness} value={t.thickness}>
+                          {t.thickness}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={styles.inlineLabelGrid}>サイズ</div>
+                    <select
+                      style={styles.compactInput}
+                      value={materialSize}
+                      onChange={(e) => setMaterialSize(e.target.value)}
+                    >
+                      {sizeOptions.map((s) => (
+                        <option key={s.size} value={s.size}>
+                          {s.size}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={styles.inlineLabelGrid}>枚数</div>
+                    <input
+                      style={styles.compactInput}
+                      type="number"
+                      step="0.1"
+                      value={materialQty}
+                      onChange={(e) => setMaterialQty(e.target.value)}
+                      placeholder="例：2.0"
+                    />
+                  </div>
+
+                  <div>
+                    <div style={styles.inlineLabelGrid}>単価</div>
+                    <input style={styles.compactInput} value={formatNumber(getUnitPrice())} readOnly />
+                  </div>
                 </div>
 
-                <div className="inline-field-row" style={styles.inlineFieldRow}>
-                  <div className="inline-field-label" style={styles.inlineLabel}>サイズ</div>
-                  <select
-                    style={styles.compactInput}
-                    value={materialSize}
-                    onChange={(e) => setMaterialSize(e.target.value)}
-                  >
-                    {sizeOptions.map((s) => (
-                      <option key={s.size} value={s.size}>
-                        {s.size}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="inline-field-row" style={styles.inlineFieldRow}>
-                  <div className="inline-field-label" style={styles.inlineLabel}>枚数</div>
-                  <input
-                    style={styles.compactInput}
-                    type="number"
-                    step="0.1"
-                    value={materialQty}
-                    onChange={(e) => setMaterialQty(e.target.value)}
-                    placeholder="例：2.0"
-                  />
-                </div>
-
-                <div className="inline-field-row" style={styles.inlineFieldRow}>
-                  <div className="inline-field-label" style={styles.inlineLabel}>単価</div>
-                  <input style={styles.compactInput} value={formatNumber(getUnitPrice())} readOnly />
-                </div>
-
-                <div style={styles.buttonRow} className="button-row">
-                  <button type="button" style={styles.primaryButton} onClick={saveMaterial}>
+                <div style={styles.buttonRowCompact} className="button-row">
+                  <button style={styles.primaryButtonCompact} onClick={saveMaterial}>
                     {editingMaterialId ? "材料を更新" : "材料を追加"}
                   </button>
                 </div>
@@ -896,15 +881,15 @@ export default function App() {
                   {selectedMonthWorkLogs.map((x) => (
                     <div key={x.id} style={styles.recordItem} className="record-item">
                       <div style={styles.recordMain}>
-                        <div style={styles.recordLineMain}>{x.date}</div>
-                        <div style={styles.recordLineSub}>{x.creator}</div>
-                        <div style={styles.recordLineSub}>{x.hours}時間</div>
+                        <div style={styles.recordHeadline}>{x.date}</div>
+                        <div style={styles.recordSub}>{x.creator}</div>
+                        <div style={styles.recordSub}>{x.hours}時間</div>
                       </div>
-                      <div style={styles.inlineButtonRow} className="button-row">
-                        <button type="button" style={styles.ghostButtonSmall} onClick={() => editWork(x)}>
+                      <div style={styles.buttonRowInline} className="button-row">
+                        <button style={styles.ghostButtonSmall} onClick={() => editWork(x)}>
                           編集
                         </button>
-                        <button type="button" style={styles.dangerButtonSmall} onClick={() => deleteWork(x.id)}>
+                        <button style={styles.dangerButtonSmall} onClick={() => deleteWork(x.id)}>
                           削除
                         </button>
                       </div>
@@ -914,22 +899,22 @@ export default function App() {
               </div>
 
               <div style={styles.card}>
-                <div style={styles.sectionTitle}>追加済みの材料</div>
+                <div style={styles.sectionTitle}>追加済み材料</div>
                 <div style={styles.listStack}>
                   {selectedMonthMaterials.length === 0 && <div style={styles.empty}>データなし</div>}
                   {selectedMonthMaterials.map((x) => (
                     <div key={x.id} style={styles.recordItem} className="record-item">
                       <div style={styles.recordMain}>
-                        <div style={styles.recordLineMain}>{x.date}</div>
-                        <div style={styles.recordLineSub}>{x.name}</div>
-                        <div style={styles.recordLineSub}>{x.thickness} / {x.size}</div>
-                        <div style={styles.recordLineSub}>{x.qty}枚</div>
+                        <div style={styles.recordHeadline}>{x.date}</div>
+                        <div style={styles.recordSub}>{x.name}</div>
+                        <div style={styles.recordSub}>{x.thickness} / {x.size}</div>
+                        <div style={styles.recordSub}>{x.qty}枚</div>
                       </div>
-                      <div style={styles.inlineButtonRow} className="button-row">
-                        <button type="button" style={styles.ghostButtonSmall} onClick={() => editMaterial(x)}>
+                      <div style={styles.buttonRowInline} className="button-row">
+                        <button style={styles.ghostButtonSmall} onClick={() => editMaterial(x)}>
                           編集
                         </button>
-                        <button type="button" style={styles.dangerButtonSmall} onClick={() => deleteMaterial(x.id)}>
+                        <button style={styles.dangerButtonSmall} onClick={() => deleteMaterial(x.id)}>
                           削除
                         </button>
                       </div>
@@ -939,8 +924,8 @@ export default function App() {
               </div>
             </div>
 
-            <div style={styles.bottomButtonWrap}>
-              <button type="button" style={styles.primaryWideButton} onClick={() => setScreen("creator")}>
+            <div style={{ marginTop: 16 }}>
+              <button style={styles.primaryWideButton} onClick={() => setScreen("creator")}>
                 完了して戻る
               </button>
             </div>
@@ -950,14 +935,12 @@ export default function App() {
         {screen === "invoice" && (
           <>
             <div style={styles.screenLabel}>画面4</div>
-            <h1 style={styles.title}>請求書・まとめ</h1>
-            <p style={styles.subTitle}>月次・年次の請求集計を確認して、CSV出力と印刷ができます。</p>
+            <h1 style={styles.title}>請求書・集計</h1>
 
             <div style={styles.card}>
               <div style={styles.label}>集計区分</div>
               <div style={styles.segmentRow} className="button-row">
                 <button
-                  type="button"
                   style={{
                     ...styles.segmentButton,
                     ...(invoiceViewMode === "month" ? styles.segmentActive : {}),
@@ -967,7 +950,6 @@ export default function App() {
                   月次
                 </button>
                 <button
-                  type="button"
                   style={{
                     ...styles.segmentButton,
                     ...(invoiceViewMode === "year" ? styles.segmentActive : {}),
@@ -978,7 +960,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div style={styles.spacer16} />
+              <div style={{ height: 12 }} />
 
               <div style={styles.label}>{invoiceViewMode === "month" ? "月選択" : "年選択"}</div>
               <div style={styles.actionRow} className="action-row">
@@ -998,13 +980,13 @@ export default function App() {
                   />
                 )}
 
-                <button type="button" style={styles.ghostButton} onClick={exportInvoiceCsv}>
+                <button style={styles.ghostButton} onClick={exportInvoiceCsv}>
                   CSV出力
                 </button>
-                <button type="button" style={styles.primaryDarkButton} onClick={printA3}>
+                <button style={styles.primaryDarkButton} onClick={printA3}>
                   A3印刷
                 </button>
-                <button type="button" style={styles.ghostButton} onClick={() => setScreen("work")}>
+                <button style={styles.ghostButton} onClick={() => setScreen("work")}>
                   作業画面へ
                 </button>
               </div>
@@ -1016,18 +998,17 @@ export default function App() {
                 <div style={styles.summaryAmount}>{formatMoney(invoiceTotalWork)}</div>
               </div>
               <div style={styles.summaryCard}>
-                <div style={styles.kpiLabel}>材料費合計</div>
+                <div style={styles.kpiLabel}>材料請求額</div>
                 <div style={styles.summaryAmount}>{formatMoney(invoiceTotalMaterial)}</div>
               </div>
               <div style={styles.summaryCard}>
-                <div style={styles.kpiLabel}>請求額</div>
+                <div style={styles.kpiLabel}>請求合計</div>
                 <div style={styles.summaryAmount}>{formatMoney(invoiceTotal)}</div>
               </div>
             </div>
 
             <div style={styles.card}>
               <div style={styles.sectionTitle}>請求一覧</div>
-
               <div style={styles.tableWrap}>
                 <table style={styles.table}>
                   <thead>
@@ -1059,7 +1040,7 @@ export default function App() {
                         <td style={styles.tdRight}>{formatNumber(row.materialQtyTotal)}</td>
                         <td style={styles.tdRight}>{formatMoney(row.workAmount)}</td>
                         <td style={styles.tdRight}>{formatMoney(row.materialAmount)}</td>
-                        <td style={styles.tdStrongRight}>{formatMoney(row.total)}</td>
+                        <td style={{ ...styles.tdRight, fontWeight: 800 }}>{formatMoney(row.total)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1096,10 +1077,21 @@ const globalCss = `
     font: inherit;
   }
 
+  input[type="date"],
+  input[type="month"] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
   @media (max-width: 768px) {
     .page-tight-mobile {
       padding-left: 4px !important;
       padding-right: 4px !important;
+    }
+
+    .work-panel-tight,
+    .material-panel-tight {
+      padding: 12px !important;
     }
 
     .field-grid {
@@ -1107,8 +1099,16 @@ const globalCss = `
       gap: 10px !important;
     }
 
-    .two-column,
-    .creator-grid,
+    .two-column {
+      grid-template-columns: 1fr !important;
+      gap: 14px !important;
+    }
+
+    .creator-grid {
+      grid-template-columns: 1fr !important;
+      gap: 10px !important;
+    }
+
     .summary-grid {
       grid-template-columns: 1fr !important;
       gap: 12px !important;
@@ -1117,7 +1117,7 @@ const globalCss = `
     .action-row {
       flex-direction: column !important;
       align-items: stretch !important;
-      gap: 8px !important;
+      gap: 10px !important;
     }
 
     .button-row {
@@ -1132,47 +1132,73 @@ const globalCss = `
     }
 
     .top-nav {
-      padding: 8px 10px !important;
-      margin-bottom: 12px !important;
-      border-radius: 16px !important;
+      display: flex !important;
+      flex-direction: row !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      gap: 12px !important;
+      padding: 10px !important;
     }
 
     .top-nav button {
-      width: 34px !important;
-      height: 34px !important;
-      min-width: 34px !important;
-      max-width: 34px !important;
-      flex: 0 0 34px !important;
-      font-size: 14px !important;
-      border-radius: 10px !important;
+      width: 38px !important;
+      height: 38px !important;
+      min-width: 38px !important;
+      max-width: 38px !important;
+      flex: 0 0 38px !important;
+      font-size: 15px !important;
+      border-radius: 12px !important;
       padding: 0 !important;
     }
 
     h1 {
-      font-size: 20px !important;
-      line-height: 1.2 !important;
+      font-size: 24px !important;
+      line-height: 1.22 !important;
       margin: 0 !important;
-    }
-
-    p {
-      font-size: 12px !important;
-      line-height: 1.6 !important;
-      margin-top: 6px !important;
+      word-break: keep-all;
     }
 
     input,
     select {
-      height: 40px !important;
+      height: 42px !important;
       font-size: 13px !important;
       padding: 0 12px !important;
-      border-radius: 12px !important;
+      border-radius: 14px !important;
       width: 100% !important;
       max-width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    input[type="date"],
+    input[type="month"] {
+      font-size: 12px !important;
+      letter-spacing: -0.01em !important;
+      padding-right: 8px !important;
     }
 
     button {
+      font-size: 13px !important;
+      border-radius: 14px !important;
+    }
+
+    .inline-field-row {
+      display: grid !important;
+      grid-template-columns: 60px minmax(0, 1fr) !important;
+      gap: 6px !important;
+      align-items: center !important;
+      margin-bottom: 8px !important;
+    }
+
+    .inline-field-label {
       font-size: 12px !important;
-      border-radius: 12px !important;
+      white-space: nowrap !important;
+      min-width: 0 !important;
+    }
+
+    .material-grid-2 {
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+      margin-top: 6px !important;
     }
 
     .site-item {
@@ -1180,59 +1206,18 @@ const globalCss = `
       gap: 8px !important;
     }
 
-    .site-item button,
-    .record-item button {
-      height: 38px !important;
-      font-size: 12px !important;
-      padding: 0 12px !important;
-    }
-
-    .site-item > div:first-child,
-    .record-item > div:first-child,
-    .creator-card-fix {
+    .site-item > div:first-child {
       min-width: 0 !important;
       overflow: hidden !important;
+    }
+
+    .creator-card-fix {
+      min-width: 0 !important;
       width: 100% !important;
     }
 
-    .work-panel-tight,
-    .material-panel-tight {
-      padding: 12px !important;
-    }
-
-    .inline-field-row {
-      display: grid !important;
-      grid-template-columns: 64px 1fr !important;
-      gap: 6px !important;
-      align-items: center !important;
-      margin-bottom: 7px !important;
-    }
-
-    .inline-field-row input,
-    .inline-field-row select {
-      height: 38px !important;
-      font-size: 12px !important;
-      padding: 0 10px !important;
-    }
-
-    .inline-field-label {
-      font-size: 12px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-    }
-
-    .summary-grid div {
-      padding: 14px !important;
-    }
-
-    .summary-grid div div:last-child {
-      font-size: 18px !important;
-      line-height: 1.15 !important;
-    }
-
     table {
-      min-width: 700px !important;
+      min-width: 720px !important;
     }
   }
 
@@ -1251,10 +1236,6 @@ const globalCss = `
       padding: 0 !important;
       height: auto !important;
     }
-
-    .screen-only {
-      display: none !important;
-    }
   }
 `;
 
@@ -1262,7 +1243,7 @@ const styles = {
   app: {
     minHeight: "100vh",
     background: "#f5f7fb",
-    padding: "12px 8px 40px",
+    padding: "18px 12px 56px",
   },
   page: {
     width: "100%",
@@ -1271,57 +1252,51 @@ const styles = {
     background: "#eef2f7",
     border: "1px solid #e2e8f1",
     borderRadius: 16,
-    padding: 8,
+    padding: 6,
     overflowX: "hidden",
   },
   topNav: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
+    gap: 16,
     background: "#fff",
-    borderRadius: 20,
-    padding: 10,
-    boxShadow: "0 6px 16px rgba(17, 24, 39, 0.06)",
-    marginBottom: 14,
+    borderRadius: 22,
+    padding: 12,
+    boxShadow: "0 8px 24px rgba(17, 24, 39, 0.06)",
+    marginBottom: 18,
   },
   navButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     border: "none",
     background: "#08133e",
     color: "#fff",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 800,
     padding: 0,
-    flex: "0 0 34px",
+    flex: "0 0 38px",
   },
   screenLabel: {
     color: "#8b95a9",
-    fontSize: 12,
-    marginBottom: 4,
+    fontSize: 13,
+    marginBottom: 6,
   },
   title: {
     margin: 0,
-    fontSize: "clamp(18px, 4vw, 30px)",
-    lineHeight: 1.15,
+    fontSize: "clamp(18px, 4.8vw, 34px)",
+    lineHeight: 1.2,
     letterSpacing: "0.01em",
     color: "#08133e",
-  },
-  subTitle: {
-    marginTop: 6,
-    marginBottom: 12,
-    fontSize: 13,
-    lineHeight: 1.55,
-    color: "#66728a",
+    marginBottom: 10,
   },
   card: {
     background: "#fff",
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 14,
-    marginBottom: 12,
-    boxShadow: "0 6px 16px rgba(17, 24, 39, 0.05)",
+    marginBottom: 14,
+    boxShadow: "0 8px 20px rgba(17, 24, 39, 0.05)",
     border: "1px solid #e4e8f2",
   },
   fieldGrid: {
@@ -1330,34 +1305,28 @@ const styles = {
     gap: 14,
   },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 700,
     color: "#7d879e",
-    marginBottom: 6,
-  },
-  subSectionLabel: {
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#7d879e",
-    marginTop: 16,
     marginBottom: 8,
   },
   input: {
     width: "100%",
-    height: 46,
-    borderRadius: 14,
+    height: 54,
+    borderRadius: 18,
     border: "1px solid #d7deea",
     background: "#fff",
-    padding: "0 14px",
-    fontSize: 14,
+    padding: "0 16px",
+    fontSize: 16,
     color: "#0a1333",
     outline: "none",
+    minWidth: 0,
   },
   compactInput: {
     width: "100%",
-    height: 40,
-    borderRadius: 12,
-    border: "1px solid #d7deea",
+    height: 42,
+    borderRadius: 14,
+    border: "1px solid #cfd8e7",
     background: "#fff",
     padding: "0 12px",
     fontSize: 13,
@@ -1369,19 +1338,36 @@ const styles = {
     display: "flex",
     gap: 10,
     alignItems: "center",
-    marginTop: 12,
+    marginTop: 14,
   },
-  inlineButtonRow: {
+  buttonRowInline: {
     display: "flex",
     gap: 8,
     alignItems: "center",
-    flexShrink: 0,
+    marginTop: 0,
+  },
+  buttonRowCompact: {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    marginTop: 12,
   },
   primaryButton: {
+    height: 44,
+    border: "none",
+    borderRadius: 14,
+    padding: "0 18px",
+    background: "#3e66e5",
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  primaryButtonCompact: {
     height: 40,
     border: "none",
-    borderRadius: 12,
-    padding: "0 16px",
+    borderRadius: 14,
+    padding: "0 18px",
     background: "#3e66e5",
     color: "#fff",
     fontSize: 13,
@@ -1390,46 +1376,56 @@ const styles = {
   },
   primaryWideButton: {
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 360,
     height: 48,
     border: "none",
-    borderRadius: 14,
-    padding: "0 20px",
+    borderRadius: 16,
+    padding: "0 24px",
     background: "#3e66e5",
     color: "#fff",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 800,
     cursor: "pointer",
     display: "block",
     margin: "0 auto",
   },
   primaryButtonSmall: {
-    height: 36,
+    height: 38,
     border: "none",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: "0 14px",
     background: "#08133e",
     color: "#fff",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 800,
     cursor: "pointer",
-    whiteSpace: "nowrap",
   },
   primaryDarkButton: {
-    height: 40,
+    height: 44,
     border: "none",
-    borderRadius: 12,
-    padding: "0 16px",
+    borderRadius: 14,
+    padding: "0 18px",
     background: "#08133e",
     color: "#fff",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 800,
     cursor: "pointer",
   },
   ghostButton: {
-    height: 40,
+    height: 44,
+    borderRadius: 14,
+    padding: "0 18px",
+    border: "1px solid #d7deea",
+    background: "#fff",
+    color: "#0a1333",
+    fontSize: 14,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  ghostButtonSmall: {
+    height: 38,
     borderRadius: 12,
-    padding: "0 16px",
+    padding: "0 14px",
     border: "1px solid #d7deea",
     background: "#fff",
     color: "#0a1333",
@@ -1437,35 +1433,22 @@ const styles = {
     fontWeight: 800,
     cursor: "pointer",
   },
-  ghostButtonSmall: {
-    height: 36,
-    borderRadius: 10,
-    padding: "0 12px",
-    border: "1px solid #d7deea",
-    background: "#fff",
-    color: "#0a1333",
-    fontSize: 12,
-    fontWeight: 800,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
   dangerButtonSmall: {
-    height: 36,
-    borderRadius: 10,
-    padding: "0 12px",
+    height: 38,
+    borderRadius: 12,
+    padding: "0 14px",
     border: "none",
     background: "#ef5350",
     color: "#fff",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 800,
     cursor: "pointer",
-    whiteSpace: "nowrap",
   },
   sectionTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: 800,
     color: "#08133e",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   listStack: {
     display: "flex",
@@ -1477,13 +1460,22 @@ const styles = {
     padding: "8px 0",
     fontSize: 13,
   },
+  siteNameCompact: {
+    fontSize: 12.5,
+    fontWeight: 700,
+    color: "#08133e",
+    lineHeight: 1.35,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
   siteItem: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 10,
     border: "1px solid #e0e6f0",
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 10,
     background: "#fff",
   },
@@ -1492,52 +1484,33 @@ const styles = {
     minWidth: 0,
     overflow: "hidden",
   },
-  siteNameCompact: {
-    fontSize: 13,
-    fontWeight: 800,
-    color: "#08133e",
-    lineHeight: 1.35,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  siteMetaCompact: {
-    marginTop: 4,
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
-    fontSize: 11,
-    color: "#6f7a91",
-    lineHeight: 1.35,
-  },
   siteName: {
-    fontSize: "clamp(18px, 4vw, 28px)",
+    fontSize: "clamp(20px, 4.4vw, 30px)",
     fontWeight: 900,
     color: "#08133e",
     lineHeight: 1.15,
-    wordBreak: "break-word",
   },
   siteMeta: {
     marginTop: 6,
-    fontSize: 13,
+    fontSize: 15,
     color: "#7a859d",
   },
   creatorGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
     gap: 12,
-    marginTop: 8,
+    marginTop: 10,
   },
   creatorCard: {
-    minHeight: 92,
-    borderRadius: 14,
+    minHeight: 88,
+    borderRadius: 18,
     padding: 12,
     textAlign: "left",
     cursor: "pointer",
     boxShadow: "0 6px 16px rgba(17,24,39,0.05)",
   },
   creatorName: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 800,
     marginBottom: 6,
     lineHeight: 1.2,
@@ -1545,9 +1518,9 @@ const styles = {
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
-  creatorMetaLine: {
-    fontSize: 11,
-    lineHeight: 1.45,
+  creatorMeta: {
+    fontSize: 12,
+    lineHeight: 1.35,
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -1559,39 +1532,40 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     marginTop: 10,
-    padding: "7px 12px",
+    padding: "8px 14px",
     borderRadius: 999,
     background: "#edf1f7",
     color: "#5d6881",
     fontWeight: 700,
-    fontSize: 12,
+    fontSize: 13,
   },
-  workSummaryRow: {
+  kpiWrapCompact: {
     display: "flex",
+    gap: 10,
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 10,
+    marginTop: 12,
   },
-  summaryMiniChip: {
+  kpiChip: {
     display: "inline-flex",
     alignItems: "center",
-    padding: "7px 10px",
+    padding: "8px 14px",
     borderRadius: 999,
-    background: "#f4f6fb",
-    color: "#53607a",
-    fontSize: 12,
-    fontWeight: 700,
+    background: "#eef2f8",
+    color: "#4f5b75",
+    fontWeight: 800,
+    fontSize: 13,
   },
   twoColumn: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 12,
+    gap: 14,
+    marginBottom: 14,
   },
   formPanel: {
-    borderRadius: 16,
+    borderRadius: 22,
     padding: 14,
     border: "1px solid #e2e8f2",
-    boxShadow: "0 6px 16px rgba(17, 24, 39, 0.05)",
+    boxShadow: "0 8px 20px rgba(17, 24, 39, 0.05)",
   },
   workPanel: {
     background: "#eef6ff",
@@ -1602,23 +1576,36 @@ const styles = {
     borderColor: "#cfeecf",
   },
   panelTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: 900,
     color: "#08133e",
     marginBottom: 12,
   },
   inlineFieldRow: {
     display: "grid",
-    gridTemplateColumns: "74px 1fr",
+    gridTemplateColumns: "64px minmax(0, 1fr)",
     gap: 8,
     alignItems: "center",
     marginBottom: 8,
   },
   inlineLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 700,
-    color: "#6c7790",
+    color: "#6b7690",
     whiteSpace: "nowrap",
+  },
+  inlineLabelGrid: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#6b7690",
+    whiteSpace: "nowrap",
+    marginBottom: 6,
+  },
+  materialGrid2: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+    marginTop: 8,
   },
   recordItem: {
     display: "flex",
@@ -1626,48 +1613,42 @@ const styles = {
     alignItems: "center",
     gap: 10,
     border: "1px solid #dce3ef",
-    borderRadius: 14,
-    padding: 10,
+    borderRadius: 18,
+    padding: 12,
     background: "#fff",
   },
   recordMain: {
     display: "flex",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
     alignItems: "center",
     flex: 1,
     minWidth: 0,
   },
-  recordLineMain: {
-    fontSize: 13,
-    fontWeight: 800,
+  recordHeadline: {
+    fontSize: 16,
     color: "#08133e",
-    lineHeight: 1.4,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    lineHeight: 1.35,
+    fontWeight: 900,
   },
-  recordLineSub: {
-    fontSize: 12,
+  recordSub: {
+    fontSize: 14,
     color: "#5f6b85",
-    lineHeight: 1.4,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    lineHeight: 1.35,
   },
   segmentRow: {
     display: "flex",
-    gap: 8,
+    gap: 10,
     alignItems: "center",
   },
   segmentButton: {
-    height: 38,
-    borderRadius: 12,
-    padding: "0 14px",
+    height: 40,
+    borderRadius: 14,
+    padding: "0 18px",
     border: "1px solid #d7deea",
     background: "#fff",
     color: "#08133e",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 800,
     cursor: "pointer",
   },
@@ -1685,34 +1666,34 @@ const styles = {
   summaryGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 12,
-    marginBottom: 12,
+    gap: 14,
+    marginBottom: 14,
   },
   summaryCard: {
     background: "#fff",
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
     border: "1px solid #e4e8f2",
-    boxShadow: "0 6px 16px rgba(17, 24, 39, 0.05)",
+    boxShadow: "0 10px 24px rgba(17, 24, 39, 0.05)",
   },
   kpiLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#7f8aa2",
     fontWeight: 700,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   summaryAmount: {
-    fontSize: "clamp(20px, 3.4vw, 34px)",
-    lineHeight: 1.15,
+    fontSize: "clamp(22px, 4vw, 38px)",
+    lineHeight: 1.2,
     fontWeight: 900,
     color: "#08133e",
-    marginTop: 4,
+    marginTop: 8,
     wordBreak: "break-word",
   },
   tableWrap: {
     width: "100%",
     overflowX: "auto",
-    borderRadius: 14,
+    borderRadius: 18,
     border: "1px solid #e5e9f2",
   },
   table: {
@@ -1725,8 +1706,8 @@ const styles = {
     background: "#f0f3f8",
     color: "#7a849b",
     textAlign: "left",
-    padding: "12px 10px",
-    fontSize: 12,
+    padding: "14px 12px",
+    fontSize: 13,
     fontWeight: 800,
     borderBottom: "1px solid #dee4ef",
     whiteSpace: "nowrap",
@@ -1735,46 +1716,31 @@ const styles = {
     background: "#f0f3f8",
     color: "#7a849b",
     textAlign: "right",
-    padding: "12px 10px",
-    fontSize: 12,
+    padding: "14px 12px",
+    fontSize: 13,
     fontWeight: 800,
     borderBottom: "1px solid #dee4ef",
     whiteSpace: "nowrap",
   },
   td: {
-    padding: "12px 10px",
-    fontSize: 12,
+    padding: "14px 12px",
+    fontSize: 14,
     color: "#08133e",
     borderBottom: "1px solid #edf1f6",
     whiteSpace: "nowrap",
   },
   tdRight: {
-    padding: "12px 10px",
-    fontSize: 12,
+    padding: "14px 12px",
+    fontSize: 14,
     color: "#08133e",
     borderBottom: "1px solid #edf1f6",
     whiteSpace: "nowrap",
     textAlign: "right",
-  },
-  tdStrongRight: {
-    padding: "12px 10px",
-    fontSize: 12,
-    color: "#08133e",
-    borderBottom: "1px solid #edf1f6",
-    whiteSpace: "nowrap",
-    textAlign: "right",
-    fontWeight: 800,
   },
   tdEmpty: {
-    padding: 18,
-    fontSize: 13,
+    padding: 20,
+    fontSize: 14,
     color: "#8c96ad",
     textAlign: "center",
-  },
-  spacer16: {
-    height: 12,
-  },
-  bottomButtonWrap: {
-    marginTop: 16,
   },
 };
