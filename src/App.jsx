@@ -1,3 +1,4 @@
+const APP_VERSION = "v2.6.1";
 import React, { useEffect, useMemo, useState } from "react";
 
 const STORAGE_KEY = "genka-app-mobile-fixed-v2";
@@ -545,6 +546,14 @@ export default function App() {
   };
 
   return (
+<div style={{
+  textAlign: "center",
+  fontSize: 12,
+  color: "#999",
+  marginBottom: 4
+}}>
+  {APP_VERSION}
+</div>
     <div style={styles.app}>
       <style>{globalCss
 /* ===== スマホ横はみ出し完全対策 ===== */
