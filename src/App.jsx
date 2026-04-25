@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.1.1";
-const STORAGE_KEY = "genka-app-state-v3.1.1";
-const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.1";
-const DEVICE_ID_KEY = "genka-device-id-v3.1.1";
+const APP_VERSION = "v3.1.3";
+const STORAGE_KEY = "genka-app-state-v3.1.3";
+const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.3";
+const DEVICE_ID_KEY = "genka-device-id-v3.1.3";
 
 const OVERHEAD = 1.35;
 const ADMIN_PIN = "1234";
@@ -40,6 +41,20 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
 const currentYear = () => String(new Date().getFullYear());
 const nowIso = () => new Date().toISOString();
 const yen = (n) => `${Math.round(Number(n || 0)).toLocaleString()}円`;
+
+const formatDateTime = (value) => {
+  if (!value) return "";
+  const s = String(value);
+  if (s.length === 10 && s[4] === "-" && s[7] === "-") return s.replaceAll("-", "/");
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10).replaceAll("-", "/");
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}/${m}/${day} ${hh}:${mm}`;
+};
 
 const isGasReady = () => GAS_URL && !GAS_URL.includes("ここにGAS");
 
@@ -672,7 +687,7 @@ const App = () => {
       <header className="topbar">
         <button className="arrow" onClick={goPrev} disabled={screen === "site"}>←</button>
         <div className="titleBox">
-          <div className="appTitle">現場原価管理</div>
+          <div className="appTitle">現場原価管理 <span className="versionBadge">{APP_VERSION}</span></div>
           <div className="subTitle">{syncStatus} / 未送信 {loadQueue().length}件</div>
         </div>
         <button className="arrow" onClick={goNext} disabled={screen === "invoice"}>→</button>
@@ -768,6 +783,8 @@ const App = () => {
               <div className="formGrid two compact">
                 <label>日付<input type="date" value={materialDate} onChange={(e) => setMaterialDate(e.target.value)} /></label>
                 <label>枚数<input type="number" inputMode="decimal" value={materialQty} onChange={(e) => setMaterialQty(e.target.value)} placeholder="1" /></label>
+                </div>
+              <div className="materialGrid">
                 <label>材料<select value={materialName} onChange={(e) => setMaterialName(e.target.value)}>{materialNames.map((m) => <option key={m}>{m}</option>)}</select></label>
                 <label>厚み<select value={materialThickness} onChange={(e) => setMaterialThickness(e.target.value)}>{materialThicknesses.map((m) => <option key={m}>{m}</option>)}</select></label>
                 <label>サイズ<select value={materialSize} onChange={(e) => setMaterialSize(e.target.value)}>{materialSizes.map((m) => <option key={m}>{m}</option>)}</select></label>
@@ -776,12 +793,12 @@ const App = () => {
             </section>
           </div>
 
-          <div className="workLayout">
+          <div className="workLayout listLayout">
             <section className="box">
               <h3>作業一覧</h3>
               {selectedWorks.map((r) => (
                 <div className="miniRow" key={r.record_id}>
-                  <span>{r.work_date} / {r.hours}h</span>
+                  <span>{formatDateTime(r.work_date || r.created_at)}｜{r.hours}h</span>
                   <div><button onClick={() => editWork(r)}>編集</button><button className="danger" onClick={() => deleteWork(r)}>削除</button></div>
                 </div>
               ))}
@@ -790,7 +807,7 @@ const App = () => {
               <h3>材料一覧</h3>
               {selectedMaterials.map((r) => (
                 <div className="miniRow" key={r.record_id}>
-                  <span>{r.material_date} / {r.material_name} {r.material_thickness} {r.material_size} / {r.qty}枚</span>
+                  <span>{formatDateTime(r.material_date || r.created_at)}｜{r.material_name} {r.material_thickness} {r.material_size}｜{r.qty}枚</span>
                   <div><button onClick={() => editMaterial(r)}>編集</button><button className="danger" onClick={() => deleteMaterial(r)}>削除</button></div>
                 </div>
               ))}
@@ -838,7 +855,7 @@ const App = () => {
 };
 
 const styles = `
-*{box-sizing:border-box} body{margin:0;background:#f4f5f7;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:1180px;margin:0 auto;padding:8px}.topbar{display:flex;align-items:center;gap:8px;background:#111827;color:white;border-radius:14px;padding:8px 10px;position:sticky;top:0;z-index:2}.arrow{width:34px;height:34px;border-radius:10px;border:0;font-size:16px;background:#374151;color:white}.arrow:disabled{opacity:.3}.titleBox{flex:1;text-align:center}.appTitle{font-weight:800;font-size:16px}.subTitle{font-size:11px;color:#d1d5db}.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:8px 0}.tabs button,.actionsLine button,.cardActions button,.miniRow button{border:0;border-radius:10px;background:white;padding:8px 6px;font-weight:700;font-size:12px;box-shadow:0 1px 3px #0001}.tabs .active{background:#111827;color:white}.notice{background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:8px;margin:6px 0;font-size:13px}.panel{background:white;border-radius:16px;padding:10px;box-shadow:0 3px 14px #00000012}h2{font-size:17px;margin:4px 0 10px}h3{font-size:14px;margin:12px 0 6px}.formGrid{display:grid;gap:8px}.formGrid.two{grid-template-columns:1fr 1fr}.formGrid.four{grid-template-columns:1fr 1fr 1fr auto}.formGrid.compact{gap:6px}label{font-size:11px;font-weight:800;color:#4b5563}input,select{width:100%;height:38px;border:1px solid #d1d5db;border-radius:10px;padding:6px 8px;font-size:14px;background:white}.primary{width:100%;height:40px;border:0;border-radius:12px;background:#111827;color:white;font-weight:800;margin-top:8px}.inlineBtn{height:38px;margin-top:15px}.selectedInfo{font-size:13px;font-weight:800;background:#eef2ff;border-radius:12px;padding:8px;margin-bottom:8px}.list{display:grid;gap:7px}.card{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px}.cardMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.cardMain b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardMain span{font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardActions{display:flex;gap:4px}.danger{background:#fee2e2!important;color:#991b1b!important}.workLayout{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px}.editing{border:2px solid #f59e0b;background:#fffbeb}.miniRow{display:flex;align-items:center;justify-content:space-between;gap:6px;border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:12px}.miniRow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.miniRow div{display:flex;gap:4px;flex-shrink:0}.summaryGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}.summaryGrid div{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;text-align:center}.summaryGrid b{display:block;font-size:15px}.summaryGrid span{font-size:11px;color:#6b7280}.actionsLine{display:flex;gap:6px;margin:8px 0}.tableWrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #e5e7eb;padding:7px;text-align:left;white-space:nowrap}th{background:#f3f4f6}@media(max-width:760px){.app{padding:6px}.formGrid.two,.formGrid.four,.workLayout{grid-template-columns:1fr 1fr}.card{padding:7px}.cardActions button{font-size:11px;padding:7px 5px}.summaryGrid{grid-template-columns:1fr 1fr}input,select{height:36px;font-size:13px}.panel{padding:8px}}@media(max-width:430px){.workLayout{grid-template-columns:1fr}.formGrid.four{grid-template-columns:1fr 1fr}.appTitle{font-size:15px}.tabs button{font-size:11px;padding:7px 3px}}@media print{.topbar,.tabs,.actionsLine,.notice{display:none}.app{max-width:none}.panel{box-shadow:none}.tableWrap{overflow:visible}}
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:1180px;margin:0 auto;padding:8px;overflow-x:hidden}.topbar{display:flex;align-items:center;gap:8px;background:#111827;color:white;border-radius:14px;padding:8px 10px;position:sticky;top:0;z-index:2}.arrow{width:34px;height:34px;border-radius:10px;border:0;font-size:16px;background:#374151;color:white;flex-shrink:0}.arrow:disabled{opacity:.3}.titleBox{flex:1;text-align:center;min-width:0}.appTitle{font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px}.versionBadge{font-size:11px;background:#2563eb;color:#fff;border-radius:999px;padding:2px 8px;line-height:1.4}.subTitle{font-size:11px;color:#d1d5db}.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:8px 0}.tabs button,.actionsLine button,.cardActions button,.miniRow button{border:0;border-radius:10px;background:white;padding:8px 6px;font-weight:700;font-size:12px;box-shadow:0 1px 3px #0001;white-space:nowrap}.tabs .active{background:#111827;color:white}.notice{background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:8px;margin:6px 0;font-size:13px}.panel{background:white;border-radius:16px;padding:10px;box-shadow:0 3px 14px #00000012;overflow:hidden}h2{font-size:17px;margin:4px 0 10px}h3{font-size:14px;margin:12px 0 6px}.formGrid{display:grid;gap:8px}.formGrid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.formGrid.four{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto}.formGrid.compact{gap:6px}.materialGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.85fr) minmax(0,.85fr);gap:6px;margin-top:6px}label{font-size:11px;font-weight:800;color:#4b5563;min-width:0}input,select{width:100%;min-width:0;height:38px;border:1px solid #d1d5db;border-radius:10px;padding:6px 8px;font-size:14px;background:white}.primary{width:100%;height:40px;border:0;border-radius:12px;background:#111827;color:white;font-weight:800;margin-top:8px}.inlineBtn{height:38px;margin-top:15px}.selectedInfo{font-size:13px;font-weight:800;background:#eef2ff;border-radius:12px;padding:8px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.list{display:grid;gap:7px}.card{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;min-width:0}.cardMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.cardMain b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardMain span{font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardActions{display:flex;gap:4px;flex-shrink:0}.danger{background:#fee2e2!important;color:#991b1b!important}.workLayout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}.box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;min-width:0;overflow:hidden}.editing{border:2px solid #f59e0b;background:#fffbeb}.miniRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:12px;min-width:0}.miniRow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}.miniRow div{display:flex;gap:4px;flex-shrink:0}.summaryGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0}.summaryGrid div{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;text-align:center}.summaryGrid b{display:block;font-size:15px}.summaryGrid span{font-size:11px;color:#6b7280}.actionsLine{display:flex;gap:6px;margin:8px 0}.tableWrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #e5e7eb;padding:7px;text-align:left;white-space:nowrap}th{background:#f3f4f6}@media(max-width:760px){.app{padding:6px}.formGrid.two,.formGrid.four,.workLayout{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.card{padding:7px}.cardActions button{font-size:11px;padding:7px 5px}.summaryGrid{grid-template-columns:1fr 1fr}input,select{height:36px;font-size:13px}.panel{padding:8px}}@media(max-width:430px){.listLayout{grid-template-columns:1fr}.formGrid.four{grid-template-columns:1fr 1fr}.appTitle{font-size:15px}.tabs button{font-size:11px;padding:7px 3px}.miniRow{font-size:11px;gap:6px}.miniRow button{font-size:11px;padding:7px 5px}.materialGrid{grid-template-columns:minmax(0,1fr) minmax(0,.85fr) minmax(0,.85fr);gap:6px}}@media print{.topbar,.tabs,.actionsLine,.notice{display:none}.app{max-width:none}.panel{box-shadow:none}.tableWrap{overflow:visible}}
 `;
 
 export default App;
