@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.1.5";
+const APP_VERSION = "v3.1.6";
 const STORAGE_KEY = "genka-app-state-v3.1.5";
 const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.5";
 const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
@@ -681,6 +681,39 @@ const App = () => {
 
   return (
     <div className="app">
+.twoCol,
+.formTwo,
+.inputRow,
+.workRow,
+.materialRow {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+.twoCol > *,
+.formTwo > *,
+.inputRow > *,
+.workRow > *,
+.materialRow > * {
+  min-width: 0 !important;
+}
+
+.twoCol input,
+.twoCol select,
+.formTwo input,
+.formTwo select,
+.inputRow input,
+.inputRow select,
+.workRow input,
+.workRow select,
+.materialRow input,
+.materialRow select {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
       <style>{styles}</style>
 
       <header className="topbar">
