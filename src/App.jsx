@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.1.9";
+const APP_VERSION = "v3.2.1";
 const STORAGE_KEY = "genka-app-state-v3.1.5";
 const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.5";
 const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
@@ -679,7 +679,10 @@ const App = () => {
   };
 
   return (
-    <div className="app">
+    <div
+  className="app"
+  style={{ paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
+>
       <style>{styles}</style>
 
       <header className="topbar">
