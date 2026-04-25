@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.1.8";
+const APP_VERSION = "v3.1.9";
 const STORAGE_KEY = "genka-app-state-v3.1.5";
 const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.5";
 const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
@@ -608,8 +608,7 @@ const App = () => {
             materialQtyTotal,
             workAmount,
             materialAmount,
-            adjustment,
-            total: workAmount + materialAmount + adjustment,
+            total: workAmount + materialAmount,
           });
         }
       });
@@ -624,7 +623,7 @@ const App = () => {
 
   const exportInvoiceCsv = () => {
     const periodLabel = invoiceViewMode === "month" ? selectedMonth : selectedYear;
-    const header = ["集計区分", "対象期間", "現場名", "担当者", "制作者", "作業時間", "作業件数", "材料枚数", "材料件数", "作業請求", "材料請求", "調整金額", "請求金額"];
+    const header = ["集計区分", "対象期間", "現場名", "担当者", "制作者", "作業時間", "作業件数", "材料枚数", "材料件数", "作業請求", "材料請求",  "請求金額"];
     const body = invoiceRows.map((r) => [
       invoiceViewMode === "month" ? "月次" : "年次",
       periodLabel,
@@ -827,7 +826,7 @@ const App = () => {
           <div className="summaryGrid">
             <div><b>{yen(workTotal)}</b><span>作業請求</span></div>
             <div><b>{yen(materialTotal)}</b><span>材料請求</span></div>
-            <div><b>{yen(adjustmentTotal)}</b><span>調整金額</span></div>
+            
             <div><b>{yen(invoiceTotal)}</b><span>請求合計</span></div>
           </div>
           <div className="actionsLine">
@@ -837,11 +836,11 @@ const App = () => {
           </div>
           <div className="tableWrap">
             <table>
-              <thead><tr><th>現場名</th><th>担当</th><th>制作者</th><th>作業</th><th>材料</th><th>調整</th><th>合計</th></tr></thead>
+              <thead><tr><th>現場名</th><th>担当</th><th>制作者</th><th>作業</th><th>材料</th><th>合計</th></tr></thead>
               <tbody>
                 {invoiceRows.map((r) => (
                   <tr key={`${r.siteId}_${r.creator}`}>
-                    <td>{r.siteName}</td><td>{r.manager}</td><td>{r.creator}</td><td>{yen(r.workAmount)}</td><td>{yen(r.materialAmount)}</td><td>{yen(r.adjustment)}</td><td><b>{yen(r.total)}</b></td>
+                    <td>{r.siteName}</td><td>{r.manager}</td><td>{r.creator}</td><td>{yen(r.workAmount)}</td><td>{yen(r.materialAmount)}</td><td><b>{yen(r.total)}</b></td>
                   </tr>
                 ))}
               </tbody>
