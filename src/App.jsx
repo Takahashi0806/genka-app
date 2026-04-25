@@ -1,539 +1,346 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const APP_VERSION = "v2.9.3-shared-sites";
-const STORAGE_KEY = "genka-app-mobile-ui-v290";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
+
+const APP_VERSION = "v3.1.1";
+const STORAGE_KEY = "genka-app-state-v3.1.1";
+const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.1";
+const DEVICE_ID_KEY = "genka-device-id-v3.1.1";
+
 const OVERHEAD = 1.35;
-const BASE_HOURLY = 2300;
-const FUJISHIMA_HOURLY = 2000;
+const ADMIN_PIN = "1234";
 
-const workers = ["中畑", "伴", "谷上", "藤島", "堀江", "佐藤幸三"];
-const managers = ["工藤", "片野", "髙橋", "山野寺", "金子", "こうだい", "マナト"];
-
-const fallbackMaterialOptions = [
-  {
-    name: "ラワンランバー",
-    thicknesses: [
-      { thickness: "12t", sizes: [{ size: "3×6", unitPrice: 2040 }, { size: "4×8", unitPrice: 2720 }] },
-      { thickness: "15t", sizes: [{ size: "3×6", unitPrice: 2600 }, { size: "4×8", unitPrice: 3460 }] },
-      { thickness: "18t", sizes: [{ size: "3×6", unitPrice: 3200 }, { size: "4×8", unitPrice: 4260 }] },
-    ],
-  },
-  {
-    name: "シナランバー",
-    thicknesses: [
-      { thickness: "15t", sizes: [{ size: "3×6", unitPrice: 3100 }, { size: "4×8", unitPrice: 4150 }] },
-      { thickness: "18t", sizes: [{ size: "3×6", unitPrice: 3800 }, { size: "4×8", unitPrice: 5070 }] },
-    ],
-  },
-  {
-    name: "ポリ板",
-    thicknesses: [
-      { thickness: "2.5t", sizes: [{ size: "3×6", unitPrice: 1700 }, { size: "4×8", unitPrice: 2260 }] },
-      { thickness: "3.0t", sizes: [{ size: "3×6", unitPrice: 1900 }, { size: "4×8", unitPrice: 2520 }] },
-    ],
-  },
+const defaultWorkers = [
+  { id: "W001", name: "中畑", hourly_rate: 2300 },
+  { id: "W002", name: "伴", hourly_rate: 2300 },
+  { id: "W003", name: "谷上", hourly_rate: 2300 },
+  { id: "W004", name: "藤島", hourly_rate: 2000 },
+  { id: "W005", name: "堀江", hourly_rate: 2300 },
+  { id: "W006", name: "佐藤幸三", hourly_rate: 2300 },
 ];
 
-function buildMaterialOptionsFromRows(rows) {
-  const activeRows = Array.isArray(rows)
-    ? rows.filter((r) => {
-        const activeValue = String(r.is_active ?? r.status ?? "TRUE").toLowerCase();
-        return activeValue !== "false" && activeValue !== "deleted";
-      })
-    : [];
+const defaultManagers = [
+  { id: "M001", name: "工藤" },
+  { id: "M002", name: "片野" },
+  { id: "M003", name: "髙橋" },
+  { id: "M004", name: "山野寺" },
+  { id: "M005", name: "金子" },
+  { id: "M006", name: "こうだい" },
+  { id: "M007", name: "マナト" },
+];
 
-  const nameMap = new Map();
+const defaultMaterials = [
+  { id: "MAT001", name: "ラワンランバー", thickness: "12t", size: "3×6", full_name: "ラワンランバー 12t 3×6", unit_price: 2040 },
+  { id: "MAT002", name: "ラワンランバー", thickness: "15t", size: "3×6", full_name: "ラワンランバー 15t 3×6", unit_price: 2600 },
+  { id: "MAT003", name: "ラワンランバー", thickness: "18t", size: "3×6", full_name: "ラワンランバー 18t 3×6", unit_price: 3200 },
+];
 
-  activeRows.forEach((r) => {
-    const name = String(r.name || r.material_name || "").trim();
-    const thickness = String(r.thickness || r.material_thickness || "").trim();
-    const size = String(r.size || r.material_size || "").trim();
-    if (!name || !thickness || !size) return;
+const today = () => new Date().toISOString().slice(0, 10);
+const currentMonth = () => new Date().toISOString().slice(0, 7);
+const currentYear = () => String(new Date().getFullYear());
+const nowIso = () => new Date().toISOString();
+const yen = (n) => `${Math.round(Number(n || 0)).toLocaleString()}円`;
 
-    const unitPrice = Number(r.unit_price || r.price || r.unitPrice || 0);
-    const materialId = String(r.id || r.material_id || "").trim();
-    const fullName = String(r.full_name || r.fullName || `${name} ${thickness} ${size}`).trim();
+const isGasReady = () => GAS_URL && !GAS_URL.includes("ここにGAS");
 
-    if (!nameMap.has(name)) {
-      nameMap.set(name, { name, thicknesses: [] });
-    }
-
-    const material = nameMap.get(name);
-    let thicknessGroup = material.thicknesses.find((t) => t.thickness === thickness);
-    if (!thicknessGroup) {
-      thicknessGroup = { thickness, sizes: [] };
-      material.thicknesses.push(thicknessGroup);
-    }
-
-    if (!thicknessGroup.sizes.some((x) => x.size === size && x.unitPrice === unitPrice && x.materialId === materialId)) {
-      thicknessGroup.sizes.push({ size, unitPrice, materialId, fullName });
-    }
-  });
-
-  return Array.from(nameMap.values())
-    .map((m) => ({
-      ...m,
-      thicknesses: m.thicknesses
-        .map((t) => ({
-          ...t,
-          sizes: t.sizes.sort((a, b) => String(a.size).localeCompare(String(b.size), "ja")),
-        }))
-        .sort((a, b) => String(a.thickness).localeCompare(String(b.thickness), "ja")),
-    }))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function monthValue() {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function yearValue() {
-  return String(new Date().getFullYear());
-}
-
-function makeId(prefix = "id") {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function formatNumber(value) {
-  return Number(value || 0).toLocaleString("ja-JP");
-}
-
-function formatMoney(value) {
-  return `${Number(Math.round(value || 0)).toLocaleString("ja-JP")}円`;
-}
-
-function toMonthLabel(v) {
-  if (!v) return "";
-  const [y, m] = v.split("-");
-  return `${y}年${Number(m)}月`;
-}
-
-function getHourlyRate(name) {
-  return name === "藤島" ? FUJISHIMA_HOURLY : BASE_HOURLY;
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function getDeviceId() {
-  const key = "genka-device-id";
-  let id = localStorage.getItem(key);
+const getDeviceId = () => {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
   if (!id) {
-    id = makeId("device");
-    localStorage.setItem(key, id);
+    id = `device_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(DEVICE_ID_KEY, id);
   }
   return id;
-}
+};
 
+const makeRecordId = (type) => `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const makeSiteId = () => `site_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-function toDateValue(value) {
-  if (!value) return "";
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  const s = String(value);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  if (/^\d{4}\/\d{1,2}\/\d{1,2}/.test(s)) {
-    const [y, m, d] = s.split(/[\/\s]/);
-    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  }
-  return s.slice(0, 10);
-}
-
-function latestActiveRecords(rows) {
-  const map = new Map();
-  (Array.isArray(rows) ? rows : []).forEach((r) => {
-    const recordId = String(r.record_id || "").trim();
-    if (!recordId) return;
-    const prev = map.get(recordId);
-    const prevTime = prev ? new Date(prev.updated_at || prev.created_at || 0).getTime() : -1;
-    const nextTime = new Date(r.updated_at || r.created_at || 0).getTime();
-    if (!prev || nextTime >= prevTime) map.set(recordId, r);
-  });
-  return Array.from(map.values()).filter((r) => String(r.status || "active").toLowerCase() !== "deleted");
-}
-
-function buildAppStateFromDataLogs(rows) {
-  const activeRows = latestActiveRecords(rows);
-  const siteMap = new Map();
-  const creatorMap = {};
-  const nextWorks = [];
-  const nextMaterials = [];
-
-  activeRows.forEach((r) => {
-    const type = String(r.entity_type || "").trim();
-    const siteId = String(r.site_id || "").trim();
-    const siteName = String(r.site_name || "").trim();
-    const manager = String(r.manager || "").trim();
-    const creator = String(r.creator || "").trim();
-
-    if (siteId && siteName && !siteMap.has(siteId)) {
-      siteMap.set(siteId, {
-        id: siteId,
-        name: siteName,
-        person: manager || managers[0],
-        isActive: true,
-        createdAt: toDateValue(r.created_at) || today(),
-      });
-    }
-
-    if (siteId && creator && (type === "site_creator" || type === "work" || type === "material")) {
-      if (!creatorMap[siteId]) creatorMap[siteId] = [];
-      if (!creatorMap[siteId].includes(creator)) creatorMap[siteId].push(creator);
-    }
-
-    if (type === "work") {
-      nextWorks.push({
-        id: String(r.record_id || makeId("work")),
-        siteId,
-        date: toDateValue(r.work_date),
-        creator,
-        hours: String(r.hours || ""),
-      });
-    }
-
-    if (type === "material") {
-      nextMaterials.push({
-        id: String(r.record_id || makeId("material")),
-        siteId,
-        date: toDateValue(r.material_date),
-        creator,
-        materialId: String(r.material_id || ""),
-        name: String(r.material_name || ""),
-        thickness: String(r.material_thickness || ""),
-        size: String(r.material_size || ""),
-        qty: String(r.qty || ""),
-        unitPrice: Number(r.unit_price || 0),
-      });
-    }
-  });
-
-  return {
-    sites: Array.from(siteMap.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
-    siteCreatorsMap: creatorMap,
-    workLogs: nextWorks.sort((a, b) => String(b.date).localeCompare(String(a.date))),
-    materials: nextMaterials.sort((a, b) => String(b.date).localeCompare(String(a.date))),
-  };
-}
-
-function emptyRecord(base) {
-  const now = nowIso();
-  return {
-    record_id: base.record_id || "",
-    entity_type: base.entity_type || "",
-    site_id: base.site_id || "",
-    site_name: base.site_name || "",
-    manager: base.manager || "",
-    creator: base.creator || "",
-    work_date: base.work_date || "",
-    material_date: base.material_date || "",
-    hours: base.hours || "",
-    material_id: base.material_id || "",
-    material_name: base.material_name || "",
-    material_thickness: base.material_thickness || "",
-    material_size: base.material_size || "",
-    qty: base.qty || "",
-    unit_price: base.unit_price || "",
-    status: base.status || "active",
-    created_at: base.created_at || now,
-    updated_at: now,
-    device_id: getDeviceId(),
-    updated_by: base.updated_by || "app",
-  };
-}
-
-async function postToGas(record) {
-  const url = import.meta.env.DEV ? "/gas" : GAS_URL;
+const safeJsonParse = (text, fallback) => {
   try {
-    await fetch(url, {
-      method: "POST",
-      mode: import.meta.env.DEV ? "cors" : "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(record),
-    });
-    return true;
-  } catch (error) {
-    console.error("GAS送信エラー", error, record);
-    return false;
+    return JSON.parse(text);
+  } catch {
+    return fallback;
   }
-}
+};
 
-function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+const loadQueue = () => safeJsonParse(localStorage.getItem(SYNC_QUEUE_KEY) || "[]", []);
+const saveQueue = (queue) => localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
 
-export default function App() {
+const normalizeRecord = (record) => ({
+  record_id: String(record.record_id || makeRecordId(record.entity_type || "record")),
+  entity_type: String(record.entity_type || ""),
+  site_id: String(record.site_id || ""),
+  site_name: String(record.site_name || ""),
+  manager: String(record.manager || ""),
+  creator: String(record.creator || ""),
+  work_date: String(record.work_date || ""),
+  material_date: String(record.material_date || ""),
+  hours: record.hours === undefined || record.hours === null ? "" : String(record.hours),
+  material_id: String(record.material_id || ""),
+  material_name: String(record.material_name || ""),
+  material_thickness: String(record.material_thickness || ""),
+  material_size: String(record.material_size || ""),
+  qty: record.qty === undefined || record.qty === null ? "" : String(record.qty),
+  unit_price: record.unit_price === undefined || record.unit_price === null ? "" : String(record.unit_price),
+  status: String(record.status || "active"),
+  created_at: String(record.created_at || nowIso()),
+  updated_at: String(record.updated_at || nowIso()),
+  device_id: String(record.device_id || getDeviceId()),
+  updated_by: String(record.updated_by || ""),
+});
+
+const mergeRecords = (base, incoming) => {
+  const map = new Map();
+  [...base, ...incoming].forEach((r) => {
+    const record = normalizeRecord(r);
+    const old = map.get(record.record_id);
+    if (!old || String(record.updated_at) >= String(old.updated_at)) {
+      map.set(record.record_id, record);
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+};
+
+const active = (r) => r.status !== "deleted";
+
+const App = () => {
   const [screen, setScreen] = useState("site");
-  const [sites, setSites] = useState([]);
-  const [siteCreatorsMap, setSiteCreatorsMap] = useState({});
-  const [workLogs, setWorkLogs] = useState([]);
-  const [materials, setMaterials] = useState([]);
-  const [materialOptions, setMaterialOptions] = useState(fallbackMaterialOptions);
-  const [isMasterLoading, setIsMasterLoading] = useState(false);
+  const [records, setRecords] = useState([]);
+  const [workers, setWorkers] = useState(defaultWorkers);
+  const [managers, setManagers] = useState(defaultManagers);
+  const [materialMasters, setMaterialMasters] = useState(defaultMaterials);
+  const [adjustments, setAdjustments] = useState([]);
+
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [commonCreator, setCommonCreator] = useState(defaultWorkers[0].name);
 
   const [siteName, setSiteName] = useState("");
-  const [sitePerson, setSitePerson] = useState(managers[0]);
-  const [editingSiteId, setEditingSiteId] = useState(null);
+  const [sitePerson, setSitePerson] = useState(defaultManagers[0].name);
+  const [editingSiteRecordId, setEditingSiteRecordId] = useState(null);
 
-  const [selectedSiteId, setSelectedSiteId] = useState(null);
-  const [selectedCreator, setSelectedCreator] = useState("");
-  const [newCreatorName, setNewCreatorName] = useState(workers[0]);
+  const [newCreatorName, setNewCreatorName] = useState(defaultWorkers[0].name);
 
-  const [targetMonth, setTargetMonth] = useState(monthValue());
   const [workDate, setWorkDate] = useState(today());
   const [workHours, setWorkHours] = useState("");
-  const [editingWorkId, setEditingWorkId] = useState(null);
+  const [editingWorkRecordId, setEditingWorkRecordId] = useState(null);
 
   const [materialDate, setMaterialDate] = useState(today());
-  const [materialName, setMaterialName] = useState(fallbackMaterialOptions[0].name);
-  const [materialThickness, setMaterialThickness] = useState(fallbackMaterialOptions[0].thicknesses[0].thickness);
-  const [materialSize, setMaterialSize] = useState(fallbackMaterialOptions[0].thicknesses[0].sizes[0].size);
+  const [materialName, setMaterialName] = useState(defaultMaterials[0].name);
+  const [materialThickness, setMaterialThickness] = useState(defaultMaterials[0].thickness);
+  const [materialSize, setMaterialSize] = useState(defaultMaterials[0].size);
   const [materialQty, setMaterialQty] = useState("");
-  const [editingMaterialId, setEditingMaterialId] = useState(null);
+  const [editingMaterialRecordId, setEditingMaterialRecordId] = useState(null);
 
   const [invoiceViewMode, setInvoiceViewMode] = useState("month");
-  const [selectedMonth, setSelectedMonth] = useState(monthValue());
-  const [selectedYear, setSelectedYear] = useState(yearValue());
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  const [selectedYear, setSelectedYear] = useState(currentYear());
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [notice, setNotice] = useState("");
+  const [syncStatus, setSyncStatus] = useState("未同期");
+
+  const managerNames = useMemo(() => managers.filter((m) => m.is_active !== false && String(m.is_active).toLowerCase() !== "false").map((m) => m.name), [managers]);
+  const workerNames = useMemo(() => workers.filter((w) => w.is_active !== false && String(w.is_active).toLowerCase() !== "false").map((w) => w.name), [workers]);
+
+  const notify = (msg) => {
+    // 登録・追加・更新・削除のたびに確認表示を出さない
+    const silentMessages = ["登録しました", "追加しました", "更新しました", "削除しました", "CSVを出力しました", "管理者モードになりました"];
+    if (silentMessages.some((word) => String(msg).includes(word))) return;
+
+    setNotice(msg);
+    window.clearTimeout(window.__genkaNotifyTimer);
+    window.__genkaNotifyTimer = window.setTimeout(() => setNotice(""), 2500);
+  };
+
+  const persistLocal = (nextRecords, nextMasters, extra = {}) => {
+    const snapshot = {
+      records: nextRecords,
+      workers: nextMasters?.workers || workers,
+      managers: nextMasters?.managers || managers,
+      materialMasters: nextMasters?.materialMasters || materialMasters,
+      adjustments,
+      selectedSiteId,
+      commonCreator,
+      ...extra,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  };
+
+  const setAndPersistRecords = (updater, extra = {}) => {
+    setRecords((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      persistLocal(next, null, extra);
+      return next;
+    });
+  };
+
+  const pushRecords = async (sendRecords) => {
+    if (!sendRecords.length) return true;
+    if (!isGasReady()) return false;
+
+    try {
+      setSyncStatus("同期中");
+      const res = await fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "bulkUpsert", records: sendRecords.map(normalizeRecord) }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "GAS保存エラー");
+      setSyncStatus("同期済み");
+      return true;
+    } catch (err) {
+      console.error(err);
+      setSyncStatus("未送信あり");
+      return false;
+    }
+  };
+
+  const enqueueRecords = async (sendRecords) => {
+    const normalized = sendRecords.map(normalizeRecord);
+    const queue = mergeRecords(loadQueue(), normalized);
+    saveQueue(queue);
+
+    const ok = await pushRecords(queue);
+    if (ok) saveQueue([]);
+    return ok;
+  };
+
+  const flushQueue = async () => {
+    const queue = loadQueue();
+    if (!queue.length) return true;
+    const ok = await pushRecords(queue);
+    if (ok) saveQueue([]);
+    return ok;
+  };
+
+  const fetchBootstrap = async () => {
+    if (!isGasReady()) return;
+
+    try {
+      setSyncStatus("読込中");
+      const res = await fetch(`${GAS_URL}?action=bootstrap&ts=${Date.now()}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "GAS読込エラー");
+
+      const nextWorkers = json.masters?.workers?.length ? json.masters.workers : defaultWorkers;
+      const nextManagers = json.masters?.managers?.length ? json.masters.managers : defaultManagers;
+      const nextMaterials = json.masters?.materials?.length ? json.masters.materials : defaultMaterials;
+
+      setWorkers(nextWorkers);
+      setManagers(nextManagers);
+      setMaterialMasters(nextMaterials);
+      setAdjustments(json.adjustments || []);
+
+      // 重要：ここで records 変数を直接使わない。
+      // 起動直後は records が空のまま同期が走るため、ローカルで登録した現場が消える原因になる。
+      setRecords((prev) => {
+        const localSaved = safeJsonParse(localStorage.getItem(STORAGE_KEY) || "{}", {});
+        const localRecords = Array.isArray(localSaved.records) ? localSaved.records : [];
+
+        // 重要：prev + localStorage + GAS を必ず全部マージする。
+        // これで、GAS読込が空でも登録直後の現場が消えない。
+        const nextRecords = mergeRecords([...localRecords, ...prev], json.records || []);
+
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            records: nextRecords,
+            workers: nextWorkers,
+            managers: nextManagers,
+            materialMasters: nextMaterials,
+            adjustments: json.adjustments || [],
+            selectedSiteId,
+            commonCreator,
+          })
+        );
+        return nextRecords;
+      });
+
+      await flushQueue();
+      setSyncStatus("同期済み");
+    } catch (err) {
+      console.error(err);
+      setSyncStatus("読込失敗");
+    }
+  };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      setSites(Array.isArray(data.sites) ? data.sites : []);
-      setSiteCreatorsMap(data.siteCreatorsMap || {});
-      setWorkLogs(Array.isArray(data.workLogs) ? data.workLogs : []);
-      setMaterials(Array.isArray(data.materials) ? data.materials : []);
-    } catch (e) {
-      console.error(e);
-    }
+    const saved = safeJsonParse(localStorage.getItem(STORAGE_KEY) || "{}", {});
+    if (saved.records) setRecords(saved.records.map(normalizeRecord));
+    if (saved.workers) setWorkers(saved.workers);
+    if (saved.managers) setManagers(saved.managers);
+    if (saved.materialMasters) setMaterialMasters(saved.materialMasters);
+    if (saved.adjustments) setAdjustments(saved.adjustments);
+    if (saved.selectedSiteId) setSelectedSiteId(saved.selectedSiteId);
+    if (saved.commonCreator) setCommonCreator(saved.commonCreator);
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchBootstrap() {
-      setIsMasterLoading(true);
-      try {
-        const url = import.meta.env.DEV ? "/gas" : GAS_URL;
-        const res = await fetch(url);
-        const data = await res.json();
-        if (cancelled) return;
-
-        const masterRows = data.materials || data.masters?.materials || [];
-        const nextOptions = buildMaterialOptionsFromRows(masterRows);
-        if (nextOptions.length > 0) {
-          setMaterialOptions(nextOptions);
-          setMaterialName((current) => nextOptions.some((m) => m.name === current) ? current : nextOptions[0].name);
-        }
-
-        const logRows = data.data_logs || data.records || [];
-        if (Array.isArray(logRows) && logRows.length > 0) {
-          const nextState = buildAppStateFromDataLogs(logRows);
-          setSites(nextState.sites);
-          setSiteCreatorsMap(nextState.siteCreatorsMap);
-          setWorkLogs(nextState.workLogs);
-          setMaterials(nextState.materials);
-        }
-      } catch (error) {
-        console.error("GASデータ取得エラー", error);
-      } finally {
-        if (!cancelled) setIsMasterLoading(false);
-      }
-    }
-
     fetchBootstrap();
-
-    const intervalId = window.setInterval(fetchBootstrap, 30000);
+    const timer = setInterval(() => {
+      fetchBootstrap();
+    }, 30000);
     const onFocus = () => fetchBootstrap();
     window.addEventListener("focus", onFocus);
-
     return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
+      clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sites, siteCreatorsMap, workLogs, materials }));
-  }, [sites, siteCreatorsMap, workLogs, materials]);
+  const siteRecords = useMemo(() => records.filter((r) => r.entity_type === "site" && active(r)), [records]);
+  const creatorRecords = useMemo(() => records.filter((r) => r.entity_type === "site_creator" && active(r)), [records]);
+  const workRecords = useMemo(() => records.filter((r) => r.entity_type === "work" && active(r)), [records]);
+  const materialRecords = useMemo(() => records.filter((r) => r.entity_type === "material" && active(r)), [records]);
 
-  const selectedSite = useMemo(
-    () => sites.find((s) => s.id === selectedSiteId) || null,
-    [sites, selectedSiteId]
-  );
-
-  const thicknessOptions = useMemo(() => {
-    return materialOptions.find((m) => m.name === materialName)?.thicknesses || [];
-  }, [materialName]);
-
-  const sizeOptions = useMemo(() => {
-    return thicknessOptions.find((t) => t.thickness === materialThickness)?.sizes || [];
-  }, [thicknessOptions, materialThickness]);
-
-  useEffect(() => {
-    const first = thicknessOptions[0];
-    if (!first) return;
-    if (!thicknessOptions.some((t) => t.thickness === materialThickness)) {
-      setMaterialThickness(first.thickness);
-      setMaterialSize(first.sizes[0]?.size || "");
-    }
-  }, [thicknessOptions, materialThickness]);
-
-  useEffect(() => {
-    const found = thicknessOptions.find((t) => t.thickness === materialThickness);
-    if (!found) return;
-    if (!found.sizes.some((s) => s.size === materialSize)) {
-      setMaterialSize(found.sizes[0]?.size || "");
-    }
-  }, [materialThickness, thicknessOptions, materialSize]);
-
-  const selectedMonthWorkLogs = useMemo(() => {
-    if (!selectedSite || !selectedCreator) return [];
-    return workLogs.filter(
-      (x) => x.siteId === selectedSite.id && x.creator === selectedCreator && (x.date || "").slice(0, 7) === targetMonth
-    );
-  }, [workLogs, selectedSite, selectedCreator, targetMonth]);
-
-  const selectedMonthMaterials = useMemo(() => {
-    if (!selectedSite || !selectedCreator) return [];
-    return materials.filter(
-      (x) => x.siteId === selectedSite.id && x.creator === selectedCreator && (x.date || "").slice(0, 7) === targetMonth
-    );
-  }, [materials, selectedSite, selectedCreator, targetMonth]);
-
-  const monthWorkHoursTotal = selectedMonthWorkLogs.reduce((sum, x) => sum + Number(x.hours || 0), 0);
-  const monthMaterialQtyTotal = selectedMonthMaterials.reduce((sum, x) => sum + Number(x.qty || 0), 0);
-
-  const siteSummaries = useMemo(() => {
-    return sites.map((site) => {
-      const ownWorks = workLogs.filter((x) => x.siteId === site.id);
-      const ownMaterials = materials.filter((x) => x.siteId === site.id);
-      const months = [...new Set([...ownWorks.map((x) => (x.date || "").slice(0, 7)), ...ownMaterials.map((x) => (x.date || "").slice(0, 7))].filter(Boolean))];
-      return {
-        ...site,
-        workCount: ownWorks.length,
-        materialCount: ownMaterials.length,
-        latestMonth: months.sort().reverse()[0] || "-",
-      };
-    });
-  }, [sites, workLogs, materials]);
-
-  const creatorCards = useMemo(() => {
-    if (!selectedSite) return [];
-    const creators = siteCreatorsMap[selectedSite.id] || [];
-    return creators.map((creator) => {
-      const ownWorks = workLogs.filter((x) => x.siteId === selectedSite.id && x.creator === creator);
-      const ownMaterials = materials.filter((x) => x.siteId === selectedSite.id && x.creator === creator);
-      return {
-        creator,
-        workHoursTotal: ownWorks.reduce((sum, x) => sum + Number(x.hours || 0), 0),
-        workCount: ownWorks.length,
-        materialQtyTotal: ownMaterials.reduce((sum, x) => sum + Number(x.qty || 0), 0),
-        materialCount: ownMaterials.length,
-      };
-    });
-  }, [selectedSite, siteCreatorsMap, workLogs, materials]);
-
-  const invoiceRows = useMemo(() => {
-    const rowMap = {};
-
-    sites.forEach((site) => {
-      (siteCreatorsMap[site.id] || []).forEach((creator) => {
-        rowMap[`${site.id}__${creator}`] = {
-          siteId: site.id,
-          siteName: site.name,
-          manager: site.person,
-          creator,
-          workHoursTotal: 0,
-          workCount: 0,
-          materialQtyTotal: 0,
-          materialCount: 0,
-          workAmount: 0,
-          materialAmount: 0,
-          total: 0,
-        };
+  const sites = useMemo(() => {
+    const map = new Map();
+    siteRecords.forEach((r) => {
+      map.set(r.site_id, {
+        id: r.site_id,
+        recordId: r.record_id,
+        name: r.site_name,
+        person: r.manager,
+        createdAt: r.created_at?.slice(0, 10) || "",
       });
     });
+    return Array.from(map.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }, [siteRecords]);
 
-    workLogs.forEach((x) => {
-      const date = x.date || "";
-      const hit = invoiceViewMode === "month" ? date.slice(0, 7) === selectedMonth : date.slice(0, 4) === selectedYear;
-      if (!hit) return;
-      const site = sites.find((s) => s.id === x.siteId);
-      const key = `${x.siteId}__${x.creator}`;
-      if (!rowMap[key]) {
-        rowMap[key] = {
-          siteId: x.siteId,
-          siteName: site?.name || "",
-          manager: site?.person || "",
-          creator: x.creator,
-          workHoursTotal: 0,
-          workCount: 0,
-          materialQtyTotal: 0,
-          materialCount: 0,
-          workAmount: 0,
-          materialAmount: 0,
-          total: 0,
-        };
-      }
-      rowMap[key].workHoursTotal += Number(x.hours || 0);
-      rowMap[key].workCount += 1;
-      rowMap[key].workAmount += Number(x.hours || 0) * getHourlyRate(x.creator) * OVERHEAD;
+  const selectedSite = useMemo(() => sites.find((s) => s.id === selectedSiteId) || null, [sites, selectedSiteId]);
+
+  const siteCreatorsMap = useMemo(() => {
+    const map = {};
+    creatorRecords.forEach((r) => {
+      if (!map[r.site_id]) map[r.site_id] = [];
+      if (r.creator && !map[r.site_id].includes(r.creator)) map[r.site_id].push(r.creator);
     });
+    return map;
+  }, [creatorRecords]);
 
-    materials.forEach((x) => {
-      const date = x.date || "";
-      const hit = invoiceViewMode === "month" ? date.slice(0, 7) === selectedMonth : date.slice(0, 4) === selectedYear;
-      if (!hit) return;
-      const site = sites.find((s) => s.id === x.siteId);
-      const key = `${x.siteId}__${x.creator}`;
-      if (!rowMap[key]) {
-        rowMap[key] = {
-          siteId: x.siteId,
-          siteName: site?.name || "",
-          manager: site?.person || "",
-          creator: x.creator,
-          workHoursTotal: 0,
-          workCount: 0,
-          materialQtyTotal: 0,
-          materialCount: 0,
-          workAmount: 0,
-          materialAmount: 0,
-          total: 0,
-        };
-      }
-      rowMap[key].materialQtyTotal += Number(x.qty || 0);
-      rowMap[key].materialCount += 1;
-      rowMap[key].materialAmount += Number(x.qty || 0) * Number(x.unitPrice || 0) * OVERHEAD;
-    });
+  const selectedCreators = selectedSite ? siteCreatorsMap[selectedSite.id] || [] : [];
 
-    return Object.values(rowMap)
-      .map((row) => ({ ...row, total: row.workAmount + row.materialAmount }))
-      .filter((row) => row.workCount > 0 || row.materialCount > 0 || (siteCreatorsMap[row.siteId] || []).includes(row.creator))
-      .sort((a, b) => (a.siteName !== b.siteName ? a.siteName.localeCompare(b.siteName, "ja") : a.creator.localeCompare(b.creator, "ja")));
-  }, [sites, siteCreatorsMap, workLogs, materials, invoiceViewMode, selectedMonth, selectedYear]);
+  const upsertLocalAndRemote = (record) => {
+    const normalized = normalizeRecord(record);
+    setAndPersistRecords((prev) => mergeRecords(prev, [normalized]));
+    enqueueRecords([normalized]);
+  };
 
-  const invoiceTotalWork = invoiceRows.reduce((sum, x) => sum + x.workAmount, 0);
-  const invoiceTotalMaterial = invoiceRows.reduce((sum, x) => sum + x.materialAmount, 0);
-  const invoiceTotal = invoiceRows.reduce((sum, x) => sum + x.total, 0);
+  const getHourlyRate = (creator) => {
+    const w = workers.find((x) => x.name === creator);
+    return Number(w?.hourly_rate || (creator === "藤島" ? 2000 : 2300));
+  };
 
-  const selectedMaterialSizeOption = () => sizeOptions.find((x) => x.size === materialSize) || null;
-  const getUnitPrice = () => Number(selectedMaterialSizeOption()?.unitPrice || 0);
-  const getMaterialId = () => selectedMaterialSizeOption()?.materialId || "";
-  const notify = (msg) => window.alert(msg);
+  const selectedMaterialMaster = useMemo(() => {
+    return materialMasters.find(
+      (m) => m.name === materialName && String(m.thickness || "") === String(materialThickness || "") && String(m.size || "") === String(materialSize || "")
+    ) || materialMasters.find((m) => m.name === materialName) || materialMasters[0];
+  }, [materialMasters, materialName, materialThickness, materialSize]);
+
+  const materialNames = useMemo(() => Array.from(new Set(materialMasters.map((m) => m.name))).filter(Boolean), [materialMasters]);
+  const materialThicknesses = useMemo(() => Array.from(new Set(materialMasters.filter((m) => m.name === materialName).map((m) => m.thickness))).filter(Boolean), [materialMasters, materialName]);
+  const materialSizes = useMemo(() => Array.from(new Set(materialMasters.filter((m) => m.name === materialName && (!materialThickness || m.thickness === materialThickness)).map((m) => m.size))).filter(Boolean), [materialMasters, materialName, materialThickness]);
 
   const goPrev = () => {
     if (screen === "creator") setScreen("site");
@@ -547,40 +354,33 @@ export default function App() {
     if (screen === "work") setScreen("invoice");
   };
 
-  const resetSiteForm = () => {
-    setSiteName("");
-    setSitePerson(managers[0]);
-    setEditingSiteId(null);
-  };
-
-  const saveSite = async () => {
+  const saveSite = () => {
     if (!siteName.trim()) return notify("現場名を入力してください");
-
-    if (editingSiteId) {
-      const updatedSite = { id: editingSiteId, name: siteName.trim(), person: sitePerson, isActive: true, createdAt: today() };
-      setSites((prev) => prev.map((s) => (s.id === editingSiteId ? { ...s, name: updatedSite.name, person: updatedSite.person } : s)));
-      await postToGas(emptyRecord({ record_id: editingSiteId, entity_type: "site", site_id: editingSiteId, site_name: updatedSite.name, manager: updatedSite.person }));
-      resetSiteForm();
-      notify("現場を更新しました");
-      return;
-    }
-
-    const newSite = {
-      id: makeId("site"),
-      name: siteName.trim(),
-      person: sitePerson,
-      isActive: true,
-      createdAt: today(),
+    const existing = editingSiteRecordId ? records.find((r) => r.record_id === editingSiteRecordId) : null;
+    const siteId = existing?.site_id || makeSiteId();
+    const record = {
+      record_id: existing?.record_id || makeRecordId("site"),
+      entity_type: "site",
+      site_id: siteId,
+      site_name: siteName.trim(),
+      manager: sitePerson,
+      status: "active",
+      created_at: existing?.created_at || nowIso(),
+      updated_at: nowIso(),
+      device_id: getDeviceId(),
+      updated_by: commonCreator,
     };
-    setSites((prev) => [newSite, ...prev]);
-    setSiteCreatorsMap((prev) => ({ ...prev, [newSite.id]: [] }));
-    await postToGas(emptyRecord({ record_id: newSite.id, entity_type: "site", site_id: newSite.id, site_name: newSite.name, manager: newSite.person, created_at: newSite.createdAt }));
-    resetSiteForm();
-    notify("現場を登録しました");
+    upsertLocalAndRemote(record);
+    setSelectedSiteId(siteId);
+    persistLocal(mergeRecords(records, [record]), null, { selectedSiteId: siteId });
+    setEditingSiteRecordId(null);
+    setSiteName("");
+    setSitePerson(managerNames[0] || "");
+    notify(existing ? "現場を更新しました" : "現場を登録しました");
   };
 
   const editSite = (site) => {
-    setEditingSiteId(site.id);
+    setEditingSiteRecordId(site.recordId);
     setSiteName(site.name);
     setSitePerson(site.person);
     setScreen("site");
@@ -588,577 +388,457 @@ export default function App() {
 
   const openSite = (site) => {
     setSelectedSiteId(site.id);
-    const creators = siteCreatorsMap[site.id] || [];
-    setSelectedCreator(creators[0] || "");
+    persistLocal(records, null, { selectedSiteId: site.id });
     setScreen("creator");
   };
 
-  const deleteSite = async (site) => {
-    if (!window.confirm(`現場「${site.name}」を削除しますか？\nこの現場の作業・材料・制作者もアプリ上から削除されます。`)) return;
-
-    const relatedWorks = workLogs.filter((x) => x.siteId === site.id);
-    const relatedMaterials = materials.filter((x) => x.siteId === site.id);
-    const relatedCreators = siteCreatorsMap[site.id] || [];
-
-    setSites((prev) => prev.filter((s) => s.id !== site.id));
-    setWorkLogs((prev) => prev.filter((x) => x.siteId !== site.id));
-    setMaterials((prev) => prev.filter((x) => x.siteId !== site.id));
-    setSiteCreatorsMap((prev) => {
-      const next = { ...prev };
-      delete next[site.id];
-      return next;
-    });
-
-    if (selectedSiteId === site.id) {
-      setSelectedSiteId(null);
-      setSelectedCreator("");
-      setScreen("site");
-    }
-    if (editingSiteId === site.id) resetSiteForm();
-
-    const records = [
-      emptyRecord({ record_id: site.id, entity_type: "site", site_id: site.id, site_name: site.name, manager: site.person, status: "deleted" }),
-      ...relatedCreators.map((creator) =>
-        emptyRecord({ record_id: `site_creator_${site.id}_${creator}`, entity_type: "site_creator", site_id: site.id, site_name: site.name, manager: site.person, creator, status: "deleted" })
-      ),
-      ...relatedWorks.map((x) =>
-        emptyRecord({ record_id: x.id, entity_type: "work", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, work_date: x.date, hours: x.hours, status: "deleted" })
-      ),
-      ...relatedMaterials.map((x) =>
-        emptyRecord({ record_id: x.id, entity_type: "material", site_id: site.id, site_name: site.name, manager: site.person, creator: x.creator, material_date: x.date, material_id: x.materialId || "", material_name: x.name, material_thickness: x.thickness, material_size: x.size, qty: x.qty, unit_price: x.unitPrice, status: "deleted" })
-      ),
-    ];
-
-    await Promise.all(records.map((record) => postToGas(record)));
+  const deleteSite = (site) => {
+    if (!window.confirm(`現場「${site.name}」を削除しますか？`)) return;
+    const targetRecords = records.filter((r) => r.site_id === site.id && active(r));
+    const deleted = targetRecords.map((r) => normalizeRecord({ ...r, status: "deleted", updated_at: nowIso(), device_id: getDeviceId(), updated_by: commonCreator }));
+    setAndPersistRecords((prev) => mergeRecords(prev, deleted));
+    enqueueRecords(deleted);
+    if (selectedSiteId === site.id) setSelectedSiteId("");
     notify("現場を削除しました");
   };
 
-  const deleteCreator = async (creatorName) => {
+  const addCreator = () => {
     if (!selectedSite) return notify("先に現場を選んでください");
-    if (!window.confirm(`制作者「${creatorName}」をこの現場から削除しますか？\n作業・材料の履歴は残します。`)) return;
+    if (!newCreatorName) return notify("制作者を選んでください");
+    if (selectedCreators.includes(newCreatorName)) return notify("この制作者は登録済みです");
 
-    setSiteCreatorsMap((prev) => ({
-      ...prev,
-      [selectedSite.id]: (prev[selectedSite.id] || []).filter((name) => name !== creatorName),
-    }));
-
-    if (selectedCreator === creatorName) {
-      const nextCreator = (siteCreatorsMap[selectedSite.id] || []).find((name) => name !== creatorName) || "";
-      setSelectedCreator(nextCreator);
-    }
-
-    await postToGas(emptyRecord({
-      record_id: `site_creator_${selectedSite.id}_${creatorName}`,
+    const record = {
+      record_id: makeRecordId("site_creator"),
       entity_type: "site_creator",
       site_id: selectedSite.id,
       site_name: selectedSite.name,
       manager: selectedSite.person,
-      creator: creatorName,
-      status: "deleted",
-    }));
-    notify("制作者を削除しました");
-  };
-
-  const addCreator = async () => {
-    if (!selectedSite) return notify("先に現場を選んでください");
-    const current = siteCreatorsMap[selectedSite.id] || [];
-    if (current.includes(newCreatorName)) return notify("この制作者は登録済みです");
-    setSiteCreatorsMap((prev) => ({ ...prev, [selectedSite.id]: [...(prev[selectedSite.id] || []), newCreatorName] }));
-    setSelectedCreator(newCreatorName);
-    await postToGas(emptyRecord({ record_id: `site_creator_${selectedSite.id}_${newCreatorName}`, entity_type: "site_creator", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: newCreatorName }));
+      creator: newCreatorName,
+      status: "active",
+      created_at: nowIso(),
+      updated_at: nowIso(),
+      device_id: getDeviceId(),
+      updated_by: newCreatorName,
+    };
+    upsertLocalAndRemote(record);
+    setCommonCreator(newCreatorName);
     notify("制作者を登録しました");
   };
 
-  const clearWorkForm = () => {
-    setWorkDate(today());
-    setWorkHours("");
-    setEditingWorkId(null);
+  const deleteCreator = (creator) => {
+    if (!selectedSite) return;
+    if (!window.confirm(`${creator} をこの現場から削除しますか？`)) return;
+    const targetRecords = records.filter((r) => r.site_id === selectedSite.id && r.creator === creator && r.entity_type === "site_creator" && active(r));
+    const deleted = targetRecords.map((r) => normalizeRecord({ ...r, status: "deleted", updated_at: nowIso(), device_id: getDeviceId(), updated_by: commonCreator }));
+    setAndPersistRecords((prev) => mergeRecords(prev, deleted));
+    enqueueRecords(deleted);
+    notify("制作者を削除しました");
   };
 
-  const saveWork = async () => {
+  const selectCreator = (creator) => {
+    setCommonCreator(creator);
+    persistLocal(records, null, { commonCreator: creator });
+    setScreen("work");
+  };
+
+  const saveWork = () => {
     if (!selectedSite) return notify("先に現場を選んでください");
-    if (!selectedCreator) return notify("先に制作者を選んでください");
+    if (!commonCreator) return notify("制作者を選んでください");
     if (!workHours) return notify("作業時間を入力してください");
 
-    const row = {
-      id: editingWorkId || makeId("work"),
-      siteId: selectedSite.id,
-      date: workDate,
-      creator: selectedCreator,
-      hours: String(workHours),
+    const existing = editingWorkRecordId ? records.find((r) => r.record_id === editingWorkRecordId) : null;
+    const record = {
+      record_id: existing?.record_id || makeRecordId("work"),
+      entity_type: "work",
+      site_id: selectedSite.id,
+      site_name: selectedSite.name,
+      manager: selectedSite.person,
+      creator: commonCreator,
+      work_date: workDate,
+      hours: workHours,
+      status: "active",
+      created_at: existing?.created_at || nowIso(),
+      updated_at: nowIso(),
+      device_id: getDeviceId(),
+      updated_by: commonCreator,
     };
-
-    const record = emptyRecord({ record_id: row.id, entity_type: "work", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: selectedCreator, work_date: workDate, hours: String(workHours) });
-
-    if (editingWorkId) {
-      setWorkLogs((prev) => prev.map((x) => (x.id === editingWorkId ? row : x)));
-      await postToGas(record);
-      clearWorkForm();
-      notify("作業を更新しました");
-      return;
-    }
-    setWorkLogs((prev) => [row, ...prev]);
-    await postToGas(record);
-    clearWorkForm();
-    notify("作業を追加しました");
+    upsertLocalAndRemote(record);
+    setEditingWorkRecordId(null);
+    setWorkHours("");
+    setWorkDate(today());
+    notify(existing ? "作業を更新しました" : "作業を追加しました");
   };
 
-  const editWork = (row) => {
-    setEditingWorkId(row.id);
-    setWorkDate(row.date);
-    setWorkHours(row.hours);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const editWork = (record) => {
+    setEditingWorkRecordId(record.record_id);
+    setWorkDate(record.work_date || today());
+    setWorkHours(record.hours || "");
+    setCommonCreator(record.creator || commonCreator);
   };
 
-  const deleteWork = async (id) => {
-    if (!window.confirm("この作業を削除しますか？")) return;
-    const target = workLogs.find((x) => x.id === id);
-    setWorkLogs((prev) => prev.filter((x) => x.id !== id));
-    if (target && selectedSite) {
-      await postToGas(emptyRecord({ record_id: id, entity_type: "work", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: target.creator, work_date: target.date, hours: target.hours, status: "deleted" }));
-    }
-    if (editingWorkId === id) clearWorkForm();
+  const deleteWork = (record) => {
+    const deleted = normalizeRecord({ ...record, status: "deleted", updated_at: nowIso(), device_id: getDeviceId(), updated_by: commonCreator });
+    setAndPersistRecords((prev) => mergeRecords(prev, [deleted]));
+    enqueueRecords([deleted]);
+    notify("作業を削除しました");
   };
 
-  const clearMaterialForm = () => {
-    setMaterialDate(today());
-    setMaterialQty("");
-    setEditingMaterialId(null);
-  };
-
-  const saveMaterial = async () => {
+  const saveMaterial = () => {
     if (!selectedSite) return notify("先に現場を選んでください");
-    if (!selectedCreator) return notify("先に制作者を選んでください");
+    if (!commonCreator) return notify("制作者を選んでください");
     if (!materialQty) return notify("材料枚数を入力してください");
 
-    const row = {
-      id: editingMaterialId || makeId("material"),
-      siteId: selectedSite.id,
-      date: materialDate,
-      creator: selectedCreator,
-      name: materialName,
-      thickness: materialThickness,
-      size: materialSize,
-      qty: String(materialQty),
-      unitPrice: getUnitPrice(),
-      materialId: getMaterialId(),
+    const master = selectedMaterialMaster || {};
+    const existing = editingMaterialRecordId ? records.find((r) => r.record_id === editingMaterialRecordId) : null;
+    const record = {
+      record_id: existing?.record_id || makeRecordId("material"),
+      entity_type: "material",
+      site_id: selectedSite.id,
+      site_name: selectedSite.name,
+      manager: selectedSite.person,
+      creator: commonCreator,
+      material_date: materialDate,
+      material_id: master.id || "",
+      material_name: materialName,
+      material_thickness: materialThickness,
+      material_size: materialSize,
+      qty: materialQty,
+      unit_price: master.unit_price || "",
+      status: "active",
+      created_at: existing?.created_at || nowIso(),
+      updated_at: nowIso(),
+      device_id: getDeviceId(),
+      updated_by: commonCreator,
     };
-
-    const record = emptyRecord({ record_id: row.id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: selectedCreator, material_date: materialDate, material_id: getMaterialId(), material_name: materialName, material_thickness: materialThickness, material_size: materialSize, qty: String(materialQty), unit_price: getUnitPrice() });
-
-    if (editingMaterialId) {
-      setMaterials((prev) => prev.map((x) => (x.id === editingMaterialId ? row : x)));
-      await postToGas(record);
-      clearMaterialForm();
-      notify("材料を更新しました");
-      return;
-    }
-    setMaterials((prev) => [row, ...prev]);
-    await postToGas(record);
-    clearMaterialForm();
-    notify("材料を追加しました");
+    upsertLocalAndRemote(record);
+    setEditingMaterialRecordId(null);
+    setMaterialQty("");
+    setMaterialDate(today());
+    notify(existing ? "材料を更新しました" : "材料を追加しました");
   };
 
-  const editMaterial = (row) => {
-    setEditingMaterialId(row.id);
-    setMaterialDate(row.date);
-    setMaterialName(row.name);
-    setMaterialThickness(row.thickness);
-    setMaterialSize(row.size);
-    setMaterialQty(row.qty);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const editMaterial = (record) => {
+    setEditingMaterialRecordId(record.record_id);
+    setMaterialDate(record.material_date || today());
+    setCommonCreator(record.creator || commonCreator);
+    setMaterialName(record.material_name || materialNames[0] || "");
+    setMaterialThickness(record.material_thickness || "");
+    setMaterialSize(record.material_size || "");
+    setMaterialQty(record.qty || "");
   };
 
-  const deleteMaterial = async (id) => {
-    if (!window.confirm("この材料を削除しますか？")) return;
-    const target = materials.find((x) => x.id === id);
-    setMaterials((prev) => prev.filter((x) => x.id !== id));
-    if (target && selectedSite) {
-      await postToGas(emptyRecord({ record_id: id, entity_type: "material", site_id: selectedSite.id, site_name: selectedSite.name, manager: selectedSite.person, creator: target.creator, material_date: target.date, material_id: target.materialId || "", material_name: target.name, material_thickness: target.thickness, material_size: target.size, qty: target.qty, unit_price: target.unitPrice, status: "deleted" }));
-    }
-    if (editingMaterialId === id) clearMaterialForm();
+  const deleteMaterial = (record) => {
+    const deleted = normalizeRecord({ ...record, status: "deleted", updated_at: nowIso(), device_id: getDeviceId(), updated_by: commonCreator });
+    setAndPersistRecords((prev) => mergeRecords(prev, [deleted]));
+    enqueueRecords([deleted]);
+    notify("材料を削除しました");
   };
+
+  useEffect(() => {
+    if (!materialNames.includes(materialName) && materialNames[0]) setMaterialName(materialNames[0]);
+  }, [materialNames, materialName]);
+
+  useEffect(() => {
+    if (!materialThicknesses.includes(materialThickness) && materialThicknesses[0]) setMaterialThickness(materialThicknesses[0]);
+  }, [materialThicknesses, materialThickness]);
+
+  useEffect(() => {
+    if (!materialSizes.includes(materialSize) && materialSizes[0]) setMaterialSize(materialSizes[0]);
+  }, [materialSizes, materialSize]);
+
+  const selectedWorks = useMemo(() => {
+    if (!selectedSite) return [];
+    return workRecords.filter((r) => r.site_id === selectedSite.id && r.creator === commonCreator).sort((a, b) => String(b.work_date).localeCompare(String(a.work_date)));
+  }, [workRecords, selectedSite, commonCreator]);
+
+  const selectedMaterials = useMemo(() => {
+    if (!selectedSite) return [];
+    return materialRecords.filter((r) => r.site_id === selectedSite.id && r.creator === commonCreator).sort((a, b) => String(b.material_date).localeCompare(String(a.material_date)));
+  }, [materialRecords, selectedSite, commonCreator]);
+
+  const getAdjustment = (periodKey, siteId, creator) => {
+    const row = adjustments.find((a) => String(a.target_month || a.period_key || "") === String(periodKey) && String(a.site_id) === String(siteId) && String(a.creator || "") === String(creator || ""));
+    return Number(row?.adjustment_amount || 0);
+  };
+
+  const invoiceRows = useMemo(() => {
+    const periodKey = invoiceViewMode === "month" ? selectedMonth : selectedYear;
+    const rows = [];
+    sites.forEach((site) => {
+      const creators = siteCreatorsMap[site.id] || [];
+      creators.forEach((creator) => {
+        const works = workRecords.filter((r) => {
+          const d = r.work_date || "";
+          const match = invoiceViewMode === "month" ? d.slice(0, 7) === selectedMonth : d.slice(0, 4) === selectedYear;
+          return r.site_id === site.id && r.creator === creator && match;
+        });
+        const mats = materialRecords.filter((r) => {
+          const d = r.material_date || "";
+          const match = invoiceViewMode === "month" ? d.slice(0, 7) === selectedMonth : d.slice(0, 4) === selectedYear;
+          return r.site_id === site.id && r.creator === creator && match;
+        });
+        const workHoursTotal = works.reduce((s, r) => s + Number(r.hours || 0), 0);
+        const workAmount = workHoursTotal * getHourlyRate(creator) * OVERHEAD;
+        const materialQtyTotal = mats.reduce((s, r) => s + Number(r.qty || 0), 0);
+        const materialAmount = mats.reduce((s, r) => s + Number(r.qty || 0) * Number(r.unit_price || 0) * OVERHEAD, 0);
+        const adjustment = getAdjustment(periodKey, site.id, creator);
+        if (works.length || mats.length || adjustment) {
+          rows.push({
+            siteId: site.id,
+            siteName: site.name,
+            manager: site.person,
+            creator,
+            workCount: works.length,
+            workHoursTotal,
+            materialCount: mats.length,
+            materialQtyTotal,
+            workAmount,
+            materialAmount,
+            adjustment,
+            total: workAmount + materialAmount + adjustment,
+          });
+        }
+      });
+    });
+    return rows;
+  }, [sites, siteCreatorsMap, workRecords, materialRecords, invoiceViewMode, selectedMonth, selectedYear, workers, adjustments]);
+
+  const invoiceTotal = invoiceRows.reduce((s, r) => s + r.total, 0);
+  const workTotal = invoiceRows.reduce((s, r) => s + r.workAmount, 0);
+  const materialTotal = invoiceRows.reduce((s, r) => s + r.materialAmount, 0);
+  const adjustmentTotal = invoiceRows.reduce((s, r) => s + r.adjustment, 0);
 
   const exportInvoiceCsv = () => {
-    const target = invoiceViewMode === "month" ? selectedMonth : selectedYear;
-    const header = ["集計区分", "対象期間", "現場名", "担当者", "制作者", "作業時間", "作業件数", "材料枚数", "材料件数", "作業請求", "材料請求", "請求金額"];
-    const rows = invoiceRows.map((r) => [
+    const periodLabel = invoiceViewMode === "month" ? selectedMonth : selectedYear;
+    const header = ["集計区分", "対象期間", "現場名", "担当者", "制作者", "作業時間", "作業件数", "材料枚数", "材料件数", "作業請求", "材料請求", "調整金額", "請求金額"];
+    const body = invoiceRows.map((r) => [
       invoiceViewMode === "month" ? "月次" : "年次",
-      target,
+      periodLabel,
       r.siteName,
       r.manager,
       r.creator,
-      r.workHoursTotal,
+      r.workHoursTotal.toFixed(1),
       r.workCount,
-      r.materialQtyTotal,
+      r.materialQtyTotal.toFixed(1),
       r.materialCount,
       Math.round(r.workAmount),
       Math.round(r.materialAmount),
+      Math.round(r.adjustment),
       Math.round(r.total),
     ]);
-    const csv = [header, ...rows].map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    downloadTextFile(`請求集計_${target}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+    const csv = [header, ...body].map((line) => line.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `請求集計_${periodLabel}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    notify("CSVを出力しました");
+  };
+
+  const loginAdmin = () => {
+    if (pinInput === ADMIN_PIN) {
+      setIsAdmin(true);
+      setPinInput("");
+      notify("管理者モードになりました");
+    } else {
+      notify("PINが違います");
+    }
+  };
+
+  const siteStats = (siteId) => ({
+    workCount: workRecords.filter((r) => r.site_id === siteId).length,
+    materialCount: materialRecords.filter((r) => r.site_id === siteId).length,
+  });
+
+  const creatorStats = (siteId, creator) => {
+    const works = workRecords.filter((r) => r.site_id === siteId && r.creator === creator);
+    const mats = materialRecords.filter((r) => r.site_id === siteId && r.creator === creator);
+    return {
+      hours: works.reduce((s, r) => s + Number(r.hours || 0), 0),
+      workCount: works.length,
+      qty: mats.reduce((s, r) => s + Number(r.qty || 0), 0),
+      materialCount: mats.length,
+    };
   };
 
   return (
-    <div className="app-shell">
-      <style>{globalCss}</style>
-      <div className="version-badge">{APP_VERSION}</div>
+    <div className="app">
+      <style>{styles}</style>
 
-      <div className="app-page">
-        <div className="top-nav">
-          <button className="nav-btn" onClick={goPrev} disabled={screen === "site"}>←</button>
-          <button className="nav-btn" onClick={goNext} disabled={screen === "invoice"}>→</button>
+      <header className="topbar">
+        <button className="arrow" onClick={goPrev} disabled={screen === "site"}>←</button>
+        <div className="titleBox">
+          <div className="appTitle">現場原価管理</div>
+          <div className="subTitle">{syncStatus} / 未送信 {loadQueue().length}件</div>
         </div>
+        <button className="arrow" onClick={goNext} disabled={screen === "invoice"}>→</button>
+      </header>
 
-        {screen === "site" && (
-          <>
-            <h1 className="page-title">現場登録</h1>
-            <section className="card">
-              <div className="field-grid">
-                <div>
-                  <label className="label">現場名</label>
-                  <input className="input" value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="現場名を入力" />
+      {notice && <div className="notice">{notice}</div>}
+
+      <nav className="tabs">
+        <button className={screen === "site" ? "active" : ""} onClick={() => setScreen("site")}>現場</button>
+        <button className={screen === "creator" ? "active" : ""} onClick={() => setScreen("creator")}>制作者</button>
+        <button className={screen === "work" ? "active" : ""} onClick={() => setScreen("work")}>作業材料</button>
+        <button className={screen === "invoice" ? "active" : ""} onClick={() => setScreen("invoice")}>請求</button>
+      </nav>
+
+      {screen === "site" && (
+        <main className="panel">
+          <h2>現場登録</h2>
+          <div className="formGrid two">
+            <label>現場名<input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="現場名" /></label>
+            <label>担当者<select value={sitePerson} onChange={(e) => setSitePerson(e.target.value)}>{managerNames.map((m) => <option key={m}>{m}</option>)}</select></label>
+          </div>
+          <button className="primary" onClick={saveSite}>{editingSiteRecordId ? "現場更新" : "現場登録"}</button>
+
+          <h3>登録済み現場</h3>
+          <div className="list">
+            {sites.map((site) => {
+              const st = siteStats(site.id);
+              return (
+                <div className="card siteCard" key={site.id}>
+                  <div className="cardMain" onClick={() => openSite(site)}>
+                    <b>{site.name}</b>
+                    <span>担当:{site.person} / 作業{st.workCount}件 / 材料{st.materialCount}件 / {site.createdAt}</span>
+                  </div>
+                  <div className="cardActions">
+                    <button onClick={() => editSite(site)}>編集</button>
+                    <button onClick={() => openSite(site)}>開く</button>
+                    <button className="danger" onClick={() => deleteSite(site)}>削除</button>
+                  </div>
                 </div>
-                <div>
-                  <label className="label">担当者</label>
-                  <select className="input" value={sitePerson} onChange={(e) => setSitePerson(e.target.value)}>
-                    {managers.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
+              );
+            })}
+          </div>
+        </main>
+      )}
+
+      {screen === "creator" && (
+        <main className="panel">
+          <h2>制作者選択</h2>
+          <div className="selectedInfo">現場：{selectedSite ? `${selectedSite.name} / ${selectedSite.person}` : "未選択"}</div>
+          <div className="formGrid two">
+            <label>制作者<select value={newCreatorName} onChange={(e) => setNewCreatorName(e.target.value)}>{workerNames.map((w) => <option key={w}>{w}</option>)}</select></label>
+            <button className="primary inlineBtn" onClick={addCreator}>制作者登録</button>
+          </div>
+
+          <h3>登録済み制作者</h3>
+          <div className="list">
+            {selectedCreators.map((creator) => {
+              const st = creatorStats(selectedSite.id, creator);
+              return (
+                <div className="card creatorCard" key={creator}>
+                  <div className="cardMain" onClick={() => selectCreator(creator)}>
+                    <b>{creator}</b>
+                    <span>作業{st.hours}h/{st.workCount}件・材料{st.qty}枚/{st.materialCount}件</span>
+                  </div>
+                  <div className="cardActions">
+                    <button onClick={() => selectCreator(creator)}>開く</button>
+                    <button className="danger" onClick={() => deleteCreator(creator)}>削除</button>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        </main>
+      )}
+
+      {screen === "work" && (
+        <main className="panel">
+          <h2>作業・材料登録</h2>
+          <div className="selectedInfo">{selectedSite ? `${selectedSite.name} / 担当:${selectedSite.person} / 制作者:${commonCreator}` : "現場未選択"}</div>
+
+          <div className="workLayout">
+            <section className={editingWorkRecordId ? "box editing" : "box"}>
+              <h3>作業追加</h3>
+              <div className="formGrid two compact">
+                <label>日付<input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} /></label>
+                <label>時間<input type="number" inputMode="decimal" value={workHours} onChange={(e) => setWorkHours(e.target.value)} placeholder="8" /></label>
               </div>
-              <div className="button-row">
-                <button className="primary" onClick={saveSite}>{editingSiteId ? "現場を更新" : "現場を登録"}</button>
-                {editingSiteId && <button className="ghost" onClick={resetSiteForm}>キャンセル</button>}
-              </div>
+              <button className="primary" onClick={saveWork}>{editingWorkRecordId ? "作業更新" : "作業追加"}</button>
             </section>
 
-            <section className="card">
-              <h2 className="section-title">登録済み現場</h2>
-              <div className="list-stack">
-                {siteSummaries.length === 0 && <div className="empty">まだ現場がありません</div>}
-                {siteSummaries.map((site) => (
-                  <div key={site.id} className="site-item">
-                    <div className="site-line">
-                      {site.name} / {site.person} / 作業{site.workCount}件 / 材料{site.materialCount}件 / 作成月{site.latestMonth === "-" ? "-" : toMonthLabel(site.latestMonth)}
-                    </div>
-                    <div className="mini-buttons">
-                      <button className="mini ghost" onClick={() => editSite(site)}>編集</button>
-                      <button className="mini danger" onClick={() => deleteSite(site)}>削除</button>
-                      <button className="mini dark" onClick={() => openSite(site)}>開く</button>
-                    </div>
-                  </div>
+            <section className={editingMaterialRecordId ? "box editing" : "box"}>
+              <h3>材料追加</h3>
+              <div className="formGrid two compact">
+                <label>日付<input type="date" value={materialDate} onChange={(e) => setMaterialDate(e.target.value)} /></label>
+                <label>枚数<input type="number" inputMode="decimal" value={materialQty} onChange={(e) => setMaterialQty(e.target.value)} placeholder="1" /></label>
+                <label>材料<select value={materialName} onChange={(e) => setMaterialName(e.target.value)}>{materialNames.map((m) => <option key={m}>{m}</option>)}</select></label>
+                <label>厚み<select value={materialThickness} onChange={(e) => setMaterialThickness(e.target.value)}>{materialThicknesses.map((m) => <option key={m}>{m}</option>)}</select></label>
+                <label>サイズ<select value={materialSize} onChange={(e) => setMaterialSize(e.target.value)}>{materialSizes.map((m) => <option key={m}>{m}</option>)}</select></label>
+              </div>
+              <button className="primary" onClick={saveMaterial}>{editingMaterialRecordId ? "材料更新" : "材料追加"}</button>
+            </section>
+          </div>
+
+          <div className="workLayout">
+            <section className="box">
+              <h3>作業一覧</h3>
+              {selectedWorks.map((r) => (
+                <div className="miniRow" key={r.record_id}>
+                  <span>{r.work_date} / {r.hours}h</span>
+                  <div><button onClick={() => editWork(r)}>編集</button><button className="danger" onClick={() => deleteWork(r)}>削除</button></div>
+                </div>
+              ))}
+            </section>
+            <section className="box">
+              <h3>材料一覧</h3>
+              {selectedMaterials.map((r) => (
+                <div className="miniRow" key={r.record_id}>
+                  <span>{r.material_date} / {r.material_name} {r.material_thickness} {r.material_size} / {r.qty}枚</span>
+                  <div><button onClick={() => editMaterial(r)}>編集</button><button className="danger" onClick={() => deleteMaterial(r)}>削除</button></div>
+                </div>
+              ))}
+            </section>
+          </div>
+        </main>
+      )}
+
+      {screen === "invoice" && (
+        <main className="panel">
+          <h2>請求・集計</h2>
+          <div className="formGrid four">
+            <label>表示<select value={invoiceViewMode} onChange={(e) => setInvoiceViewMode(e.target.value)}><option value="month">月次</option><option value="year">年次</option></select></label>
+            {invoiceViewMode === "month" ? <label>月<input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></label> : <label>年<input value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} /></label>}
+            <label>PIN<input value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="1234" /></label>
+            <button className="primary inlineBtn" onClick={loginAdmin}>{isAdmin ? "管理者中" : "管理者"}</button>
+          </div>
+          <div className="summaryGrid">
+            <div><b>{yen(workTotal)}</b><span>作業請求</span></div>
+            <div><b>{yen(materialTotal)}</b><span>材料請求</span></div>
+            <div><b>{yen(adjustmentTotal)}</b><span>調整金額</span></div>
+            <div><b>{yen(invoiceTotal)}</b><span>請求合計</span></div>
+          </div>
+          <div className="actionsLine">
+            <button onClick={exportInvoiceCsv}>CSV出力</button>
+            <button onClick={() => window.print()}>印刷</button>
+            <button onClick={() => setScreen("work")}>作業画面へ戻る</button>
+          </div>
+          <div className="tableWrap">
+            <table>
+              <thead><tr><th>現場名</th><th>担当</th><th>制作者</th><th>作業</th><th>材料</th><th>調整</th><th>合計</th></tr></thead>
+              <tbody>
+                {invoiceRows.map((r) => (
+                  <tr key={`${r.siteId}_${r.creator}`}>
+                    <td>{r.siteName}</td><td>{r.manager}</td><td>{r.creator}</td><td>{yen(r.workAmount)}</td><td>{yen(r.materialAmount)}</td><td>{yen(r.adjustment)}</td><td><b>{yen(r.total)}</b></td>
+                  </tr>
                 ))}
-              </div>
-            </section>
-          </>
-        )}
-
-        {screen === "creator" && (
-          <>
-            <h1 className="page-title">制作者選択</h1>
-            <section className="card">
-              <div className="big-site-name">{selectedSite?.name || "現場未選択"}</div>
-              <div className="site-meta">担当者：{selectedSite?.person || "-"}</div>
-            </section>
-
-            <section className="card">
-              <label className="label">新規制作者登録</label>
-              <div className="field-grid compact">
-                <select className="input" value={newCreatorName} onChange={(e) => setNewCreatorName(e.target.value)}>
-                  {workers.map((w) => <option key={w} value={w}>{w}</option>)}
-                </select>
-                <button className="primary" onClick={addCreator}>制作者を登録</button>
-              </div>
-
-              <label className="label mt">制作者を選ぶ</label>
-              <div className="creator-grid">
-                {creatorCards.length === 0 && <div className="empty">まだ制作者がいません</div>}
-                {creatorCards.map((x) => (
-                  <div key={x.creator} className={`creator-card ${selectedCreator === x.creator ? "active" : ""}`}>
-                    <button className="creator-card-main" onClick={() => { setSelectedCreator(x.creator); setScreen("work"); }}>
-                      <strong>{x.creator}</strong>
-                      <span>作業{x.workCount}件 / {formatNumber(x.workHoursTotal)}時間</span>
-                      <span>材料{x.materialCount}件 / {formatNumber(x.materialQtyTotal)}枚</span>
-                    </button>
-                    <div className="mini-buttons creator-actions">
-                      <button className="mini ghost" onClick={() => { setSelectedCreator(x.creator); setScreen("work"); }}>選択</button>
-                      <button className="mini danger" onClick={() => deleteCreator(x.creator)}>削除</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
-
-        {screen === "work" && (
-          <>
-            <h1 className="page-title">現場別作業登録</h1>
-            <section className="card compact-card">
-              <div className="work-header">
-                <div>
-                  <div className="big-site-name">{selectedSite?.name || "-"}</div>
-                  <div className="site-meta">担当者：{selectedSite?.person || "-"}</div>
-                  <div className="pill">制作者：{selectedCreator || "-"}</div>
-                </div>
-                <div className="month-box">
-                  <label className="label">対象月</label>
-                  <input className="input" type="month" value={targetMonth} onChange={(e) => setTargetMonth(e.target.value)} />
-                </div>
-              </div>
-              <div className="kpi-row">
-                <span>作業{selectedMonthWorkLogs.length}件 / {formatNumber(monthWorkHoursTotal)}時間</span>
-                <span>材料{selectedMonthMaterials.length}件 / {formatNumber(monthMaterialQtyTotal)}枚</span>
-              </div>
-            </section>
-
-            <div className="two-column">
-              <section className={`panel blue ${editingWorkId ? "editing" : ""}`}>
-                <h2 className="panel-title">作業追加</h2>
-                <div className="inline-row">
-                  <label>日付</label>
-                  <input className="compact-input date-input" type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} />
-                </div>
-                <div className="inline-row">
-                  <label>時間</label>
-                  <input className="compact-input" type="number" step="0.5" value={workHours} onChange={(e) => setWorkHours(e.target.value)} placeholder="例：4" />
-                </div>
-                <div className="inline-row">
-                  <label>制作者</label>
-                  <input className="compact-input" value={selectedCreator || ""} readOnly />
-                </div>
-                <button className="primary small" onClick={saveWork}>{editingWorkId ? "作業を更新" : "作業を追加"}</button>
-              </section>
-
-              <section className={`panel green ${editingMaterialId ? "editing" : ""}`}>
-                <h2 className="panel-title">材料追加</h2>
-                {isMasterLoading && <div className="master-loading">材料マスタ読込中...</div>}
-                <div className="inline-row">
-                  <label>日付</label>
-                  <input className="compact-input date-input" type="date" value={materialDate} onChange={(e) => setMaterialDate(e.target.value)} />
-                </div>
-                <div className="inline-row">
-                  <label>材質</label>
-                  <select className="compact-input" value={materialName} onChange={(e) => setMaterialName(e.target.value)}>
-                    {materialOptions.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
-                  </select>
-                </div>
-                <div className="grid-2">
-                  <div>
-                    <label>厚み</label>
-                    <select className="compact-input" value={materialThickness} onChange={(e) => setMaterialThickness(e.target.value)}>
-                      {thicknessOptions.map((t) => <option key={t.thickness} value={t.thickness}>{t.thickness}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label>サイズ</label>
-                    <select className="compact-input" value={materialSize} onChange={(e) => setMaterialSize(e.target.value)}>
-                      {sizeOptions.map((s) => <option key={s.size} value={s.size}>{s.size}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label>枚数</label>
-                    <input className="compact-input" type="number" step="0.1" value={materialQty} onChange={(e) => setMaterialQty(e.target.value)} placeholder="例：2.0" />
-                  </div>
-                  <div>
-                    <label>単価</label>
-                    <input className="compact-input" value={formatNumber(getUnitPrice())} readOnly />
-                  </div>
-                </div>
-                <button className="primary small" onClick={saveMaterial}>{editingMaterialId ? "材料を更新" : "材料を追加"}</button>
-              </section>
-            </div>
-
-            <div className="two-column">
-              <section className="card">
-                <h2 className="section-title">追加済み作業</h2>
-                {selectedMonthWorkLogs.length === 0 && <div className="empty">データなし</div>}
-                {selectedMonthWorkLogs.map((x) => (
-                  <div key={x.id} className="record-item">
-                    <div className="record-text"><strong>{x.date}</strong><span>{x.creator}</span><span>{x.hours}時間</span></div>
-                    <div className="mini-buttons"><button className="mini ghost" onClick={() => editWork(x)}>編集</button><button className="mini danger" onClick={() => deleteWork(x.id)}>削除</button></div>
-                  </div>
-                ))}
-              </section>
-
-              <section className="card">
-                <h2 className="section-title">追加済み材料</h2>
-                {selectedMonthMaterials.length === 0 && <div className="empty">データなし</div>}
-                {selectedMonthMaterials.map((x) => (
-                  <div key={x.id} className="record-item">
-                    <div className="record-text"><strong>{x.date}</strong><span>{x.name}</span><span>{x.thickness} / {x.size}</span><span>{x.qty}枚</span></div>
-                    <div className="mini-buttons"><button className="mini ghost" onClick={() => editMaterial(x)}>編集</button><button className="mini danger" onClick={() => deleteMaterial(x.id)}>削除</button></div>
-                  </div>
-                ))}
-              </section>
-            </div>
-
-            <button className="primary wide" onClick={() => setScreen("creator")}>完了して戻る</button>
-          </>
-        )}
-
-        {screen === "invoice" && (
-          <>
-            <h1 className="page-title">請求書・集計</h1>
-            <section className="card">
-              <label className="label">集計区分</label>
-              <div className="segment-row">
-                <button className={invoiceViewMode === "month" ? "segment active" : "segment"} onClick={() => setInvoiceViewMode("month")}>月次</button>
-                <button className={invoiceViewMode === "year" ? "segment active" : "segment"} onClick={() => setInvoiceViewMode("year")}>年次</button>
-              </div>
-              <label className="label mt">{invoiceViewMode === "month" ? "月選択" : "年選択"}</label>
-              <div className="action-row">
-                {invoiceViewMode === "month" ? (
-                  <input className="input" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
-                ) : (
-                  <input className="input" type="number" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} />
-                )}
-                <button className="ghost" onClick={exportInvoiceCsv}>CSV出力</button>
-                <button className="dark-btn" onClick={() => window.print()}>A3印刷</button>
-                <button className="ghost" onClick={() => setScreen("work")}>作業画面へ</button>
-              </div>
-            </section>
-
-            <div className="summary-grid">
-              <div className="summary-card"><span>作業請求額</span><strong>{formatMoney(invoiceTotalWork)}</strong></div>
-              <div className="summary-card"><span>材料請求額</span><strong>{formatMoney(invoiceTotalMaterial)}</strong></div>
-              <div className="summary-card"><span>請求合計</span><strong>{formatMoney(invoiceTotal)}</strong></div>
-            </div>
-
-            <section className="card">
-              <h2 className="section-title">請求一覧</h2>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr><th>現場名</th><th>担当者</th><th>制作者</th><th>作業時間</th><th>材料枚数</th><th>作業請求</th><th>材料請求</th><th>請求額</th></tr>
-                  </thead>
-                  <tbody>
-                    {invoiceRows.length === 0 && <tr><td colSpan={8} className="td-empty">データがありません</td></tr>}
-                    {invoiceRows.map((row) => (
-                      <tr key={`${row.siteId}_${row.creator}`}>
-                        <td>{row.siteName}</td><td>{row.manager}</td><td>{row.creator}</td><td className="num">{formatNumber(row.workHoursTotal)}</td><td className="num">{formatNumber(row.materialQtyTotal)}</td><td className="num">{formatMoney(row.workAmount)}</td><td className="num">{formatMoney(row.materialAmount)}</td><td className="num bold">{formatMoney(row.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
-      </div>
+              </tbody>
+            </table>
+          </div>
+        </main>
+      )}
     </div>
   );
-}
+};
 
-const globalCss = `
-  * { box-sizing: border-box; }
-  html, body, #root { margin: 0; padding: 0; width: 100%; min-height: 100%; overflow-x: hidden; font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; background: #f4f7fb; color: #08133e; }
-  button, input, select { font: inherit; }
-  button { cursor: pointer; }
-  button:disabled { opacity: .35; cursor: default; }
-
-  .app-shell { min-height: 100vh; background: #f4f7fb; padding: 14px 10px 60px; overflow-x: hidden; }
-  .version-badge { position: fixed; top: 6px; left: 8px; z-index: 9999; font-size: 11px; color: #777; background: rgba(255,255,255,.9); border: 1px solid #dde3ee; border-radius: 8px; padding: 2px 7px; }
-  .app-page { width: 100%; max-width: 980px; margin: 0 auto; background: #eef2f7; border: 1px solid #e2e8f1; border-radius: 16px; padding: 6px; overflow-x: hidden; }
-  .top-nav { display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 18px; padding: 10px; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(17,24,39,.05); }
-  .nav-btn { width: 34px; height: 34px; border: 0; border-radius: 11px; background: #08133e; color: #fff; font-size: 14px; font-weight: 900; padding: 0; flex: 0 0 34px; }
-  .page-title { margin: 0 0 10px; font-size: clamp(18px, 4.4vw, 30px); line-height: 1.2; color: #08133e; }
-  .card, .panel { width: 100%; min-width: 0; border-radius: 20px; padding: 14px; margin-bottom: 12px; border: 1px solid #e2e8f2; box-shadow: 0 5px 14px rgba(17,24,39,.045); overflow: hidden; }
-  .card { background: #fff; }
-  .panel.blue { background: #f2f7ff; border-color: #dce9fb; }
-  .panel.green { background: #f4fbf4; border-color: #dcf0dc; }
-  .editing { box-shadow: 0 0 0 2px #87b8ff inset; }
-  .section-title, .panel-title { margin: 0 0 12px; font-size: 17px; font-weight: 900; color: #08133e; }
-  .master-loading { margin: -4px 0 8px; font-size: 12px; font-weight: 800; color: #6b7690; }
-  .label, .inline-row label, .grid-2 label { display: block; font-size: 13px; font-weight: 800; color: #68748e; margin-bottom: 6px; white-space: nowrap; }
-  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .field-grid.compact { align-items: end; }
-  .input, .compact-input { display: block; width: 100%; max-width: 100%; min-width: 0; border: 1px solid #cfd8e7; background: #fff; color: #08133e; outline: none; box-shadow: none; }
-  .input { height: 44px; border-radius: 14px; padding: 0 12px; font-size: 14px; }
-  .compact-input { height: 40px; border-radius: 13px; padding: 0 9px; font-size: 13px; }
-  input[type="date"], input[type="month"] { -webkit-appearance: none; appearance: none; letter-spacing: -.03em; padding-left: 6px !important; padding-right: 4px !important; text-align: center; }
-  .date-input { font-size: 12px !important; }
-  .button-row, .action-row, .segment-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
-  .primary, .ghost, .dark-btn, .segment { height: 40px; border-radius: 13px; padding: 0 14px; font-size: 13px; font-weight: 900; white-space: nowrap; }
-  .primary { border: 0; background: #3e66e5; color: #fff; }
-  .primary.small { height: 38px; margin-top: 10px; }
-  .primary.wide { width: 100%; max-width: 350px; display: block; margin: 4px auto 0; }
-  .ghost { border: 1px solid #d7deea; background: #fff; color: #08133e; }
-  .dark-btn, .segment.active { border: 0; background: #08133e; color: #fff; }
-  .segment { border: 1px solid #d7deea; background: #fff; color: #08133e; }
-  .list-stack { display: flex; flex-direction: column; gap: 9px; }
-  .empty { color: #8d97ad; padding: 8px 0; font-size: 13px; }
-  .site-item, .record-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #e0e6f0; border-radius: 15px; padding: 10px; background: #fff; min-width: 0; }
-  .site-line { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; font-weight: 800; }
-  .mini-buttons { display: flex; gap: 6px; flex: 0 0 auto; }
-  .mini { height: 34px; border-radius: 10px; padding: 0 11px; font-size: 12px; font-weight: 900; }
-  .mini.dark { border: 0; background: #08133e; color: #fff; }
-  .mini.danger { border: 0; background: #ef5350; color: #fff; }
-  .big-site-name { font-size: clamp(19px, 4.2vw, 28px); line-height: 1.15; font-weight: 900; color: #08133e; word-break: break-word; }
-  .site-meta { margin-top: 5px; font-size: 14px; color: #7a859d; }
-  .mt { margin-top: 16px; }
-  .creator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; }
-  .creator-card { min-width: 0; min-height: 82px; border-radius: 16px; padding: 10px; text-align: left; border: 1px solid #dce2ef; background: #fff; color: #08133e; box-shadow: 0 4px 12px rgba(17,24,39,.04); }
-  .creator-card.active { background: #08133e; color: #fff; border-color: #08133e; }
-  .creator-card-main { display: block; width: 100%; min-width: 0; padding: 0; margin: 0; border: 0; background: transparent; color: inherit; text-align: left; }
-  .creator-card strong, .creator-card span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .creator-card strong { font-size: 15px; margin-bottom: 6px; }
-  .creator-card span { font-size: 12px; line-height: 1.35; }
-  .creator-actions { margin-top: 9px; justify-content: flex-end; }
-  .work-header { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 10px; align-items: end; }
-  .month-box { min-width: 0; }
-  .pill { display: inline-flex; margin-top: 8px; padding: 7px 12px; border-radius: 999px; background: #eef2f8; color: #5d6881; font-size: 12px; font-weight: 800; }
-  .kpi-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .kpi-row span { display: inline-flex; align-items: center; padding: 7px 11px; border-radius: 999px; background: #eef2f8; color: #4f5b75; font-size: 12.5px; font-weight: 900; }
-  .two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; min-width: 0; }
-  .inline-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 6px; align-items: center; margin-bottom: 8px; min-width: 0; }
-  .inline-row label { margin-bottom: 0; font-size: 12.5px; }
-  .grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 8px; min-width: 0; }
-  .grid-2 > div { min-width: 0; }
-  .record-text { flex: 1; display: flex; gap: 9px; align-items: center; flex-wrap: wrap; min-width: 0; }
-  .record-text strong { font-size: 14px; color: #08133e; white-space: nowrap; }
-  .record-text span { font-size: 13px; color: #5f6b85; white-space: nowrap; }
-  .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-  .summary-card { background: #fff; border: 1px solid #e4e8f2; border-radius: 18px; padding: 14px; box-shadow: 0 5px 14px rgba(17,24,39,.045); }
-  .summary-card span { display: block; font-size: 12.5px; color: #7f8aa2; font-weight: 800; margin-bottom: 7px; }
-  .summary-card strong { display: block; font-size: clamp(20px, 4vw, 34px); color: #08133e; word-break: break-word; }
-  .table-wrap { width: 100%; overflow-x: auto; border: 1px solid #e5e9f2; border-radius: 14px; }
-  table { width: 100%; min-width: 780px; border-collapse: collapse; background: #fff; }
-  th, td { padding: 12px 10px; border-bottom: 1px solid #edf1f6; white-space: nowrap; font-size: 13px; }
-  th { background: #f0f3f8; color: #7a849b; text-align: left; font-weight: 900; }
-  td { color: #08133e; }
-  .num { text-align: right; }
-  .bold { font-weight: 900; }
-  .td-empty { text-align: center; color: #8c96ad; padding: 18px; }
-
-  @media (max-width: 768px) {
-    .app-shell { padding: 10px 6px 50px; }
-    .app-page { padding: 4px; border-radius: 14px; }
-    .top-nav { padding: 8px; margin-bottom: 10px; }
-    .nav-btn { width: 32px; height: 32px; flex-basis: 32px; }
-    .page-title { font-size: 21px; margin-bottom: 8px; }
-    .card, .panel { border-radius: 18px; padding: 11px; margin-bottom: 10px; }
-    .field-grid, .two-column, .summary-grid, .work-header { grid-template-columns: 1fr; gap: 10px; }
-    .action-row { flex-direction: column; align-items: stretch; }
-    .action-row > * { width: 100%; }
-    .site-item, .record-item { flex-direction: column; align-items: stretch; }
-    .site-line { width: 100%; }
-    .mini-buttons { justify-content: flex-end; }
-    .inline-row { grid-template-columns: 38px minmax(0, 1fr); gap: 5px; }
-    .inline-row label { font-size: 12px; }
-    .compact-input { height: 38px; font-size: 12.5px; padding-left: 7px; padding-right: 5px; }
-    .date-input { font-size: 11.5px !important; padding-left: 4px !important; padding-right: 2px !important; }
-    .grid-2 { gap: 7px; }
-    .section-title, .panel-title { font-size: 16px; margin-bottom: 10px; }
-    .primary, .ghost, .dark-btn, .segment { height: 38px; font-size: 12.5px; }
-    table { min-width: 720px; }
-  }
-
-  @media (max-width: 360px) {
-    .inline-row { grid-template-columns: 34px minmax(0, 1fr); }
-    .compact-input { font-size: 12px; padding-left: 5px; padding-right: 3px; }
-    .date-input { font-size: 11px !important; }
-    .card, .panel { padding: 10px; }
-  }
+const styles = `
+*{box-sizing:border-box} body{margin:0;background:#f4f5f7;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:1180px;margin:0 auto;padding:8px}.topbar{display:flex;align-items:center;gap:8px;background:#111827;color:white;border-radius:14px;padding:8px 10px;position:sticky;top:0;z-index:2}.arrow{width:34px;height:34px;border-radius:10px;border:0;font-size:16px;background:#374151;color:white}.arrow:disabled{opacity:.3}.titleBox{flex:1;text-align:center}.appTitle{font-weight:800;font-size:16px}.subTitle{font-size:11px;color:#d1d5db}.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:8px 0}.tabs button,.actionsLine button,.cardActions button,.miniRow button{border:0;border-radius:10px;background:white;padding:8px 6px;font-weight:700;font-size:12px;box-shadow:0 1px 3px #0001}.tabs .active{background:#111827;color:white}.notice{background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:8px;margin:6px 0;font-size:13px}.panel{background:white;border-radius:16px;padding:10px;box-shadow:0 3px 14px #00000012}h2{font-size:17px;margin:4px 0 10px}h3{font-size:14px;margin:12px 0 6px}.formGrid{display:grid;gap:8px}.formGrid.two{grid-template-columns:1fr 1fr}.formGrid.four{grid-template-columns:1fr 1fr 1fr auto}.formGrid.compact{gap:6px}label{font-size:11px;font-weight:800;color:#4b5563}input,select{width:100%;height:38px;border:1px solid #d1d5db;border-radius:10px;padding:6px 8px;font-size:14px;background:white}.primary{width:100%;height:40px;border:0;border-radius:12px;background:#111827;color:white;font-weight:800;margin-top:8px}.inlineBtn{height:38px;margin-top:15px}.selectedInfo{font-size:13px;font-weight:800;background:#eef2ff;border-radius:12px;padding:8px;margin-bottom:8px}.list{display:grid;gap:7px}.card{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px}.cardMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.cardMain b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardMain span{font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardActions{display:flex;gap:4px}.danger{background:#fee2e2!important;color:#991b1b!important}.workLayout{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px}.editing{border:2px solid #f59e0b;background:#fffbeb}.miniRow{display:flex;align-items:center;justify-content:space-between;gap:6px;border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:12px}.miniRow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.miniRow div{display:flex;gap:4px;flex-shrink:0}.summaryGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}.summaryGrid div{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;text-align:center}.summaryGrid b{display:block;font-size:15px}.summaryGrid span{font-size:11px;color:#6b7280}.actionsLine{display:flex;gap:6px;margin:8px 0}.tableWrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #e5e7eb;padding:7px;text-align:left;white-space:nowrap}th{background:#f3f4f6}@media(max-width:760px){.app{padding:6px}.formGrid.two,.formGrid.four,.workLayout{grid-template-columns:1fr 1fr}.card{padding:7px}.cardActions button{font-size:11px;padding:7px 5px}.summaryGrid{grid-template-columns:1fr 1fr}input,select{height:36px;font-size:13px}.panel{padding:8px}}@media(max-width:430px){.workLayout{grid-template-columns:1fr}.formGrid.four{grid-template-columns:1fr 1fr}.appTitle{font-size:15px}.tabs button{font-size:11px;padding:7px 3px}}@media print{.topbar,.tabs,.actionsLine,.notice{display:none}.app{max-width:none}.panel{box-shadow:none}.tableWrap{overflow:visible}}
 `;
+
+export default App;
