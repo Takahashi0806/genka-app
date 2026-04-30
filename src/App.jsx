@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.2.1";
+const APP_VERSION = "v3.3.1";
 const STORAGE_KEY = "genka-app-state-v3.1.5";
 const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.5";
 const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
@@ -303,7 +303,11 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const siteRecords = useMemo(() => records.filter((r) => r.entity_type === "site" && active(r)), [records]);
+  const siteRecords = useMemo(
+  () => records.filter((r) => r.entity_type === "site" && r.status !== "deleted"),
+  [records]
+);
+
   const creatorRecords = useMemo(() => records.filter((r) => r.entity_type === "site_creator" && active(r)), [records]);
   const workRecords = useMemo(() => records.filter((r) => r.entity_type === "work" && active(r)), [records]);
   const materialRecords = useMemo(() => records.filter((r) => r.entity_type === "material" && active(r)), [records]);
@@ -321,7 +325,13 @@ const App = () => {
     });
     return Array.from(map.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }, [siteRecords]);
-
+const visibleSites = useMemo(
+  () => sites.filter((s) => {
+    const siteRecord = records.find((r) => r.record_id === s.recordId);
+    return siteRecord?.status !== "closed";
+  }),
+  [sites, records]
+);
   const selectedSite = useMemo(() => sites.find((s) => s.id === selectedSiteId) || null, [sites, selectedSiteId]);
 
   const siteCreatorsMap = useMemo(() => {
@@ -415,8 +425,25 @@ const App = () => {
     if (selectedSiteId === site.id) setSelectedSiteId("");
     notify("現場を削除しました");
   };
+const closeSite = (site) => {
+  if (!window.confirm(`現場「${site.name}」を完了にして一覧から非表示にしますか？`)) return;
 
-  const addCreator = () => {
+  const target = records.find((r) => r.record_id === site.recordId);
+  if (!target) return;
+
+  const closed = normalizeRecord({
+    ...target,
+    status: "closed",
+    updated_at: nowIso(),
+    device_id: getDeviceId(),
+    updated_by: commonCreator,
+  });
+
+  setAndPersistRecords((prev) => mergeRecords(prev, [closed]));
+  enqueueRecords([closed]);
+
+  if (selectedSiteId === site.id) setSelectedSiteId("");
+};  const addCreator = () => {
     if (!selectedSite) return notify("先に現場を選んでください");
     if (!newCreatorName) return notify("制作者を選んでください");
     if (selectedCreators.includes(newCreatorName)) return notify("この制作者は登録済みです");
@@ -714,7 +741,7 @@ const App = () => {
 
           <h3>登録済み現場</h3>
           <div className="list">
-            {sites.map((site) => {
+            {visibleSites.map((site) => {
               const st = siteStats(site.id);
               return (
                 <div className="card siteCard" key={site.id}>
@@ -725,6 +752,7 @@ const App = () => {
                   <div className="cardActions">
                     <button onClick={() => editSite(site)}>編集</button>
                     <button onClick={() => openSite(site)}>開く</button>
+                    <button onClick={() => closeSite(site)}>完了</button>
                     <button className="danger" onClick={() => deleteSite(site)}>削除</button>
                   </div>
                 </div>
