@@ -1,8 +1,9 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.3.1";
+const APP_VERSION = "v3.4.1";
 const STORAGE_KEY = "genka-app-state-v3.1.5";
 const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.5";
 const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
@@ -10,13 +11,14 @@ const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
 const OVERHEAD = 1.35;
 const ADMIN_PIN = "1234";
 
+// デフォルトの従業員時給をスプレッドシートに合わせる
 const defaultWorkers = [
-  { id: "W001", name: "中畑", hourly_rate: 2300 },
-  { id: "W002", name: "伴", hourly_rate: 2300 },
-  { id: "W003", name: "谷上", hourly_rate: 2300 },
+  { id: "W001", name: "中畑", hourly_rate: 2800 },
+  { id: "W002", name: "伴", hourly_rate: 2800 },
+  { id: "W003", name: "谷上", hourly_rate: 2800 },
   { id: "W004", name: "藤島", hourly_rate: 2000 },
-  { id: "W005", name: "堀江", hourly_rate: 2300 },
-  { id: "W006", name: "佐藤幸三", hourly_rate: 2300 },
+  { id: "W005", name: "堀江", hourly_rate: 2500 },
+  { id: "W006", name: "佐藤幸三", hourly_rate: 2500 },
 ];
 
 const defaultManagers = [
@@ -29,10 +31,11 @@ const defaultManagers = [
   { id: "M007", name: "マナト" },
 ];
 
+// デフォルトの材料単価をスプレッドシートに合わせる
 const defaultMaterials = [
   { id: "MAT001", name: "ラワンランバー", thickness: "12t", size: "3×6", full_name: "ラワンランバー 12t 3×6", unit_price: 2040 },
-  { id: "MAT002", name: "ラワンランバー", thickness: "15t", size: "3×6", full_name: "ラワンランバー 15t 3×6", unit_price: 2600 },
-  { id: "MAT003", name: "ラワンランバー", thickness: "18t", size: "3×6", full_name: "ラワンランバー 18t 3×6", unit_price: 3200 },
+  { id: "MAT002", name: "ラワンランバー", thickness: "15t", size: "3×6", full_name: "ラワンランバー 15t 3×6", unit_price: 2200 },
+  { id: "MAT003", name: "ラワンランバー", thickness: "18t", size: "3×6", full_name: "ラワンランバー 18t 3×6", unit_price: 2450 },
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -426,23 +429,41 @@ const visibleSites = useMemo(
     notify("現場を削除しました");
   };
 const closeSite = (site) => {
-  if (!window.confirm(`現場「${site.name}」を完了にして一覧から非表示にしますか？`)) return;
+  if (
+    !window.confirm(
+      `現場「${site.name}」を完了にして一覧から非表示にしますか？\n\n※作業・材料・制作者も完了済みにします。\n※請求履歴には残ります。`
+    )
+  ) {
+    return;
+  }
 
-  const target = records.find((r) => r.record_id === site.recordId);
-  if (!target) return;
+  const targetRecords = records.filter(
+    (r) => r.site_id === site.id && r.status !== "deleted"
+  );
 
-  const closed = normalizeRecord({
-    ...target,
-    status: "closed",
-    updated_at: nowIso(),
-    device_id: getDeviceId(),
-    updated_by: commonCreator,
-  });
+  if (!targetRecords.length) {
+    notify("完了対象のデータが見つかりません");
+    return;
+  }
 
-  setAndPersistRecords((prev) => mergeRecords(prev, [closed]));
-  enqueueRecords([closed]);
+  const closedRecords = targetRecords.map((r) =>
+    normalizeRecord({
+      ...r,
+      status: "closed",
+      updated_at: nowIso(),
+      device_id: getDeviceId(),
+      updated_by: commonCreator,
+    })
+  );
 
-  if (selectedSiteId === site.id) setSelectedSiteId("");
+  setAndPersistRecords((prev) => mergeRecords(prev, closedRecords));
+  enqueueRecords(closedRecords);
+
+  if (selectedSiteId === site.id) {
+    setSelectedSiteId("");
+  }
+
+  notify("現場を完了しました");
 };  const addCreator = () => {
     if (!selectedSite) return notify("先に現場を選んでください");
     if (!newCreatorName) return notify("制作者を選んでください");
@@ -622,8 +643,8 @@ const closeSite = (site) => {
         const workAmount = workHoursTotal * getHourlyRate(creator) * OVERHEAD;
         const materialQtyTotal = mats.reduce((s, r) => s + Number(r.qty || 0), 0);
         const materialAmount = mats.reduce((s, r) => s + Number(r.qty || 0) * Number(r.unit_price || 0) * OVERHEAD, 0);
-        const adjustment = getAdjustment(periodKey, site.id, creator);
-        if (works.length || mats.length || adjustment) {
+        // 調整金額は反映しないため、作業または材料がある場合のみ行を追加する
+        if (works.length || mats.length) {
           rows.push({
             siteId: site.id,
             siteName: site.name,
@@ -635,18 +656,19 @@ const closeSite = (site) => {
             materialQtyTotal,
             workAmount,
             materialAmount,
+            // 請求合計は作業費＋材料費。調整金額はアプリに反映しない
             total: workAmount + materialAmount,
           });
         }
       });
     });
     return rows;
-  }, [sites, siteCreatorsMap, workRecords, materialRecords, invoiceViewMode, selectedMonth, selectedYear, workers, adjustments]);
+  }, [sites, siteCreatorsMap, workRecords, materialRecords, invoiceViewMode, selectedMonth, selectedYear, workers]);
 
   const invoiceTotal = invoiceRows.reduce((s, r) => s + r.total, 0);
   const workTotal = invoiceRows.reduce((s, r) => s + r.workAmount, 0);
   const materialTotal = invoiceRows.reduce((s, r) => s + r.materialAmount, 0);
-  const adjustmentTotal = invoiceRows.reduce((s, r) => s + r.adjustment, 0);
+  // 調整金額はアプリには反映しないため未使用
 
   const exportInvoiceCsv = () => {
     const periodLabel = invoiceViewMode === "month" ? selectedMonth : selectedYear;
@@ -663,7 +685,6 @@ const closeSite = (site) => {
       r.materialCount,
       Math.round(r.workAmount),
       Math.round(r.materialAmount),
-      Math.round(r.adjustment),
       Math.round(r.total),
     ]);
     const csv = [header, ...body].map((line) => line.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -861,7 +882,7 @@ const closeSite = (site) => {
             <div><b>{yen(invoiceTotal)}</b><span>請求合計</span></div>
           </div>
           <div className="actionsLine">
-            <button onClick={exportInvoiceCsv}>CSV出力</button>
+            {/* CSV出力ボタンは不要のため削除 */}
             <button onClick={() => window.print()}>印刷</button>
             <button onClick={() => setScreen("work")}>作業画面へ戻る</button>
           </div>
