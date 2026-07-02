@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx6Kvcbk5h_qQ1n-7yxw_UEUJltOGKtiMxwJH1kAfxharYcdV0GPi0W1oLZFCu_GOZA1Q/exec";
 
-const APP_VERSION = "v3.4.1";
+const APP_VERSION = "v3.5.2";
 const STORAGE_KEY = "genka-app-state-v3.1.5";
 const SYNC_QUEUE_KEY = "genka-sync-queue-v3.1.5";
 const DEVICE_ID_KEY = "genka-device-id-v3.1.5";
@@ -624,7 +624,7 @@ const closeSite = (site) => {
   };
 
   const invoiceRows = useMemo(() => {
-    const periodKey = invoiceViewMode === "month" ? selectedMonth : selectedYear;
+    if (invoiceViewMode === "attendance") return [];
     const rows = [];
     sites.forEach((site) => {
       const creators = siteCreatorsMap[site.id] || [];
@@ -671,10 +671,10 @@ const closeSite = (site) => {
   // 調整金額はアプリには反映しないため未使用
 
   const exportInvoiceCsv = () => {
-    const periodLabel = invoiceViewMode === "month" ? selectedMonth : selectedYear;
+    const periodLabel = invoiceViewMode === "year" ? selectedYear : selectedMonth;
     const header = ["集計区分", "対象期間", "現場名", "担当者", "制作者", "作業時間", "作業件数", "材料枚数", "材料件数", "作業請求", "材料請求",  "請求金額"];
     const body = invoiceRows.map((r) => [
-      invoiceViewMode === "month" ? "月次" : "年次",
+      invoiceViewMode === "year" ? "年次" : "月次",
       periodLabel,
       r.siteName,
       r.manager,
@@ -726,6 +726,92 @@ const closeSite = (site) => {
     };
   };
 
+  const reloadLatest = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", Date.now());
+    window.location.href = url.toString();
+  };
+
+  const toDateKey = (value) => {
+    if (!value) return "";
+    const s = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    if (/^\d{4}\/\d{1,2}\/\d{1,2}/.test(s)) {
+      const [y, m, d] = s.slice(0, 10).split("/");
+      return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const attendanceDays = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    return Array.from({ length: lastDay }, (_, i) => {
+      const day = i + 1;
+      const d = new Date(year, month - 1, day);
+      const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      return { day, dateKey, weekday: weekdays[d.getDay()], isHoliday: d.getDay() === 0 };
+    });
+  }, [selectedMonth]);
+
+  const attendanceCell = (dateKey, creator, isHoliday) => {
+    const works = workRecords.filter((r) => r.creator === creator && toDateKey(r.work_date) === dateKey);
+    const mats = materialRecords.filter((r) => r.creator === creator && toDateKey(r.material_date) === dateKey);
+
+    if (works.length) {
+      const total = works.reduce((s, r) => s + Number(r.hours || 0), 0);
+      const text = `${Number.isInteger(total) ? total : total.toFixed(1)}h`;
+      return { status: "work", text, works, mats };
+    }
+    if (mats.length) return { status: "warn", text: "!", works, mats };
+    if (isHoliday) return { status: "off", text: "休", works, mats };
+    return { status: "missing", text: "未", works, mats };
+  };
+
+  const attendanceSummary = useMemo(() => {
+    let missing = 0;
+    let warn = 0;
+    attendanceDays.forEach((day) => {
+      workerNames.forEach((creator) => {
+        const cell = attendanceCell(day.dateKey, creator, day.isHoliday);
+        if (cell.status === "missing") missing += 1;
+        if (cell.status === "warn") warn += 1;
+      });
+    });
+    return { missing, warn };
+  }, [attendanceDays, workerNames, workRecords, materialRecords]);
+
+  const openAttendanceCell = (dateKey, creator, cell) => {
+    if (cell.status === "work" || cell.status === "warn") {
+      const workLines = cell.works.map((r) => `作業：${r.site_name || "現場名なし"} ${r.hours || 0}h`).join("\n");
+      const matLines = cell.mats.map((r) => `材料：${r.site_name || "現場名なし"} ${r.material_name || ""} ${r.qty || 0}枚`).join("\n");
+      window.alert(`${creator}　${dateKey}\n\n${[workLines, matLines].filter(Boolean).join("\n") || "詳細なし"}`);
+      return;
+    }
+
+    if (cell.status === "off") return;
+
+    if (!selectedSite) {
+      setCommonCreator(creator);
+      setWorkDate(dateKey);
+      setMaterialDate(dateKey);
+      notify("先に現場を選んでから登録してください");
+      setScreen("site");
+      return;
+    }
+
+    setCommonCreator(creator);
+    setWorkDate(dateKey);
+    setMaterialDate(dateKey);
+    setScreen("work");
+  };
+
   return (
     <div
   className="app"
@@ -738,6 +824,7 @@ const closeSite = (site) => {
         <div className="titleBox">
           <div className="appTitle">現場原価管理 <span className="versionBadge">{APP_VERSION}</span></div>
           <div className="subTitle">{syncStatus} / 未送信 {loadQueue().length}件</div>
+          <button className="headerReload" onClick={reloadLatest}>最新版に更新</button>
         </div>
         <button className="arrow" onClick={goNext} disabled={screen === "invoice"}>→</button>
       </header>
@@ -870,42 +957,93 @@ const closeSite = (site) => {
         <main className="panel">
           <h2>請求・集計</h2>
           <div className="formGrid four">
-            <label>表示<select value={invoiceViewMode} onChange={(e) => setInvoiceViewMode(e.target.value)}><option value="month">月次</option><option value="year">年次</option></select></label>
-            {invoiceViewMode === "month" ? <label>月<input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></label> : <label>年<input value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} /></label>}
-            <label>PIN<input value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="1234" /></label>
-            <button className="primary inlineBtn" onClick={loginAdmin}>{isAdmin ? "管理者中" : "管理者"}</button>
+            <label>表示<select value={invoiceViewMode} onChange={(e) => setInvoiceViewMode(e.target.value)}><option value="month">月次</option><option value="year">年次</option><option value="attendance">登録確認</option></select></label>
+            {invoiceViewMode === "year" ? <label>年<input value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} /></label> : <label>月<input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></label>}
+            {invoiceViewMode !== "attendance" && <label>PIN<input value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="1234" /></label>}
+            {invoiceViewMode !== "attendance" && <button className="primary inlineBtn" onClick={loginAdmin}>{isAdmin ? "管理者中" : "管理者"}</button>}
           </div>
-          <div className="summaryGrid">
-            <div><b>{yen(workTotal)}</b><span>作業請求</span></div>
-            <div><b>{yen(materialTotal)}</b><span>材料請求</span></div>
-            
-            <div><b>{yen(invoiceTotal)}</b><span>請求合計</span></div>
-          </div>
-          <div className="actionsLine">
-            {/* CSV出力ボタンは不要のため削除 */}
-            <button onClick={() => window.print()}>印刷</button>
-            <button onClick={() => setScreen("work")}>作業画面へ戻る</button>
-          </div>
-          <div className="tableWrap">
-            <table>
-              <thead><tr><th>現場名</th><th>担当</th><th>制作者</th><th>作業</th><th>材料</th><th>合計</th></tr></thead>
-              <tbody>
-                {invoiceRows.map((r) => (
-                  <tr key={`${r.siteId}_${r.creator}`}>
-                    <td>{r.siteName}</td><td>{r.manager}</td><td>{r.creator}</td><td>{yen(r.workAmount)}</td><td>{yen(r.materialAmount)}</td><td><b>{yen(r.total)}</b></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+          {invoiceViewMode === "attendance" ? (
+            <>
+              <div className="attendanceHeader">
+                <div><b>登録確認カレンダー</b><span>{selectedMonth} / {APP_VERSION}</span></div>
+                <div className="attendanceSummary">未登録 {attendanceSummary.missing}件　要確認 {attendanceSummary.warn}件</div>
+              </div>
+
+
+              <div className="attendanceWrap">
+                <table className="attendanceTable">
+                  <thead>
+                    <tr>
+                      <th className="dateCol">日</th>
+                      <th className="weekCol">曜日</th>
+                      {workerNames.map((name) => <th key={name}>{name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceDays.map((day) => {
+                      const cells = workerNames.map((creator) => ({ creator, cell: attendanceCell(day.dateKey, creator, day.isHoliday) }));
+                      return (
+                        <tr key={day.dateKey} className={day.isHoliday ? "holidayRow" : ""}>
+                          <td className="dateCol"><b>{day.day}</b></td>
+                          <td className="weekCol">{day.weekday}</td>
+                          {workerNames.map((creator) => {
+                            const cell = cells.find((x) => x.creator === creator).cell;
+                            return (
+                              <td key={creator}>
+                                <button className={`attCell ${cell.status}`} onClick={() => openAttendanceCell(day.dateKey, creator, cell)}>
+                                  {cell.text}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="legend">8h=作業登録あり / 未=作業未登録 / !=材料だけあり / 休=日曜</div>
+            </>
+          ) : (
+            <>
+              <div className="summaryGrid">
+                <div><b>{yen(workTotal)}</b><span>作業請求</span></div>
+                <div><b>{yen(materialTotal)}</b><span>材料請求</span></div>
+                <div><b>{yen(invoiceTotal)}</b><span>請求合計</span></div>
+              </div>
+              <div className="actionsLine">
+                {/* CSV出力ボタンは不要のため削除 */}
+                <button onClick={() => window.print()}>印刷</button>
+                <button onClick={() => setScreen("work")}>作業画面へ戻る</button>
+              </div>
+              <div className="tableWrap">
+                <table>
+                  <thead><tr><th>現場名</th><th>担当</th><th>制作者</th><th>作業</th><th>材料</th><th>合計</th></tr></thead>
+                  <tbody>
+                    {invoiceRows.map((r) => (
+                      <tr key={`${r.siteId}_${r.creator}`}>
+                        <td>{r.siteName}</td><td>{r.manager}</td><td>{r.creator}</td><td>{yen(r.workAmount)}</td><td>{yen(r.materialAmount)}</td><td><b>{yen(r.total)}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </main>
       )}
+
+      <footer className="footerBar">
+        <span>原価アプリ {APP_VERSION}</span>
+        <button onClick={reloadLatest}>最新版に更新</button>
+      </footer>
     </div>
   );
 };
 
 const styles = `
-*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:1180px;margin:0 auto;padding:8px;overflow-x:hidden}.topbar{display:flex;align-items:center;gap:8px;background:#111827;color:white;border-radius:14px;padding:8px 10px;position:sticky;top:0;z-index:2}.arrow{width:34px;height:34px;border-radius:10px;border:0;font-size:16px;background:#374151;color:white;flex-shrink:0}.arrow:disabled{opacity:.3}.titleBox{flex:1;text-align:center;min-width:0}.appTitle{font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px}.versionBadge{font-size:11px;background:#2563eb;color:#fff;border-radius:999px;padding:2px 8px;line-height:1.4}.subTitle{font-size:11px;color:#d1d5db}.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:8px 0}.tabs button,.actionsLine button,.cardActions button,.miniRow button{border:0;border-radius:10px;background:white;padding:8px 6px;font-weight:700;font-size:12px;box-shadow:0 1px 3px #0001;white-space:nowrap}.tabs .active{background:#111827;color:white}.notice{background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:8px;margin:6px 0;font-size:13px}.panel{background:white;border-radius:16px;padding:10px;box-shadow:0 3px 14px #00000012;overflow:hidden}h2{font-size:17px;margin:4px 0 10px}h3{font-size:14px;margin:12px 0 6px}.formGrid{display:grid;gap:8px}.formGrid.two{
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:1180px;margin:0 auto;padding:8px;overflow-x:hidden}.topbar{display:flex;align-items:center;gap:8px;background:#111827;color:white;border-radius:14px;padding:8px 10px;position:sticky;top:0;z-index:2}.arrow{width:34px;height:34px;border-radius:10px;border:0;font-size:16px;background:#374151;color:white;flex-shrink:0}.arrow:disabled{opacity:.3}.titleBox{flex:1;text-align:center;min-width:0}.appTitle{font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px}.versionBadge{font-size:11px;background:#2563eb;color:#fff;border-radius:999px;padding:2px 8px;line-height:1.4}.subTitle{font-size:11px;color:#d1d5db}.headerReload{margin-top:3px;border:0;border-radius:999px;background:#4b5563;color:white;font-size:10px;font-weight:800;padding:3px 9px}.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:8px 0}.tabs button,.actionsLine button,.cardActions button,.miniRow button{border:0;border-radius:10px;background:white;padding:8px 6px;font-weight:700;font-size:12px;box-shadow:0 1px 3px #0001;white-space:nowrap}.tabs .active{background:#111827;color:white}.notice{background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:8px;margin:6px 0;font-size:13px}.panel{background:white;border-radius:16px;padding:10px;box-shadow:0 3px 14px #00000012;overflow:hidden}h2{font-size:17px;margin:4px 0 10px}h3{font-size:14px;margin:12px 0 6px}.formGrid{display:grid;gap:8px}.formGrid.two{
   grid-template-columns:minmax(0,1.28fr) minmax(0,.72fr);
   gap:10px;
 }.formGrid.four{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto}.formGrid.compact{gap:6px}.materialGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.85fr) minmax(0,.85fr);gap:6px;margin-top:6px}label{font-size:11px;font-weight:800;color:#4b5563;min-width:0}.formGrid > label,
@@ -923,7 +1061,7 @@ const styles = `
   font-size:14px;
   background:white;
   box-sizing:border-box;
-}.primary{width:100%;height:40px;border:0;border-radius:12px;background:#111827;color:white;font-weight:800;margin-top:8px}.inlineBtn{height:38px;margin-top:15px}.selectedInfo{font-size:13px;font-weight:800;background:#eef2ff;border-radius:12px;padding:8px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.list{display:grid;gap:7px}.card{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;min-width:0}.cardMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.cardMain b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardMain span{font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardActions{display:flex;gap:4px;flex-shrink:0}.danger{background:#fee2e2!important;color:#991b1b!important}.workLayout{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:8px}.box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;min-width:0;overflow:hidden}.editing{border:2px solid #f59e0b;background:#fffbeb}.miniRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:12px;min-width:0}.miniRow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}.miniRow div{display:flex;gap:4px;flex-shrink:0}.summaryGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0}.summaryGrid div{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;text-align:center}.summaryGrid b{display:block;font-size:15px}.summaryGrid span{font-size:11px;color:#6b7280}.actionsLine{display:flex;gap:6px;margin:8px 0}.tableWrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #e5e7eb;padding:7px;text-align:left;white-space:nowrap}th{background:#f3f4f6}@media(max-width:760px){.app{padding:6px}.formGrid.four{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.card{padding:7px}.cardActions button{font-size:11px;padding:7px 5px}.summaryGrid{grid-template-columns:1fr 1fr}input,select{height:36px;font-size:13px}.panel{padding:8px}}@media(max-width:430px){.listLayout{grid-template-columns:1fr}.formGrid.four{grid-template-columns:1fr 1fr}.appTitle{font-size:15px}.tabs button{font-size:11px;padding:7px 3px}.miniRow{font-size:11px;gap:6px}.miniRow button{font-size:11px;padding:7px 5px}.materialGrid{grid-template-columns:minmax(0,1fr) minmax(0,.85fr) minmax(0,.85fr);gap:6px}}@media(max-width:430px){
+}.primary{width:100%;height:40px;border:0;border-radius:12px;background:#111827;color:white;font-weight:800;margin-top:8px}.inlineBtn{height:38px;margin-top:15px}.selectedInfo{font-size:13px;font-weight:800;background:#eef2ff;border-radius:12px;padding:8px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.list{display:grid;gap:7px}.card{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;min-width:0}.cardMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.cardMain b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardMain span{font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cardActions{display:flex;gap:4px;flex-shrink:0}.danger{background:#fee2e2!important;color:#991b1b!important}.workLayout{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:8px}.box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;min-width:0;overflow:hidden}.editing{border:2px solid #f59e0b;background:#fffbeb}.miniRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:12px;min-width:0}.miniRow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}.miniRow div{display:flex;gap:4px;flex-shrink:0}.summaryGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0}.summaryGrid div{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:8px;text-align:center}.summaryGrid b{display:block;font-size:15px}.summaryGrid span{font-size:11px;color:#6b7280}.actionsLine{display:flex;gap:6px;margin:8px 0}.attendanceHeader{display:flex;justify-content:space-between;gap:8px;align-items:center;background:#eef2ff;border:1px solid #c7d2fe;border-radius:14px;padding:8px;margin:8px 0}.attendanceHeader div{display:flex;flex-direction:column;gap:2px}.attendanceHeader span{font-size:11px;color:#4b5563}.attendanceSummary{font-size:13px;font-weight:900;color:#111827;text-align:right}.filterTabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}.filterTabs button{border:0;border-radius:10px;background:#f3f4f6;padding:8px 5px;font-weight:900;font-size:12px}.filterTabs .active{background:#111827;color:white}.attendanceWrap{overflow:auto;border:1px solid #e5e7eb;border-radius:14px;max-height:68vh}.attendanceTable{min-width:720px;width:100%;border-collapse:separate;border-spacing:0;font-size:12px}.attendanceTable th{position:sticky;top:0;z-index:1;background:#111827;color:white;text-align:center;padding:7px 5px;border-bottom:1px solid #374151}.attendanceTable td{border-bottom:1px solid #e5e7eb;border-right:1px solid #eef2f7;text-align:center;padding:4px;background:white}.attendanceTable .dateCol{position:sticky;left:0;z-index:2;min-width:42px;background:#f3f4f6;color:#111827}.attendanceTable thead .dateCol{z-index:3;background:#111827;color:white}.attendanceTable .weekCol{position:sticky;left:42px;z-index:2;min-width:48px;background:#f3f4f6;color:#111827}.attendanceTable thead .weekCol{z-index:3;background:#111827;color:white}.holidayRow td{background:#f9fafb}.attCell{width:100%;min-width:46px;border:0;border-radius:8px;padding:7px 3px;font-weight:900;font-size:12px}.attCell.work{background:#dcfce7;color:#166534}.attCell.missing{background:#fee2e2;color:#991b1b}.attCell.warn{background:#fef3c7;color:#92400e}.attCell.off{background:#e5e7eb;color:#4b5563}.legend{font-size:11px;color:#6b7280;margin:7px 2px}.footerBar{display:flex;align-items:center;justify-content:center;gap:8px;margin:10px 0 2px;color:#6b7280;font-size:11px}.footerBar button{border:0;border-radius:999px;background:#111827;color:white;font-weight:800;font-size:11px;padding:5px 10px}.tableWrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #e5e7eb;padding:7px;text-align:left;white-space:nowrap}th{background:#f3f4f6}@media(max-width:760px){.app{padding:6px}.formGrid.four{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.card{padding:7px}.cardActions button{font-size:11px;padding:7px 5px}.summaryGrid{grid-template-columns:1fr 1fr}input,select{height:36px;font-size:13px}.panel{padding:8px}}@media(max-width:430px){.listLayout{grid-template-columns:1fr}.formGrid.four{grid-template-columns:1fr 1fr}.appTitle{font-size:15px}.tabs button{font-size:11px;padding:7px 3px}.miniRow{font-size:11px;gap:6px}.miniRow button{font-size:11px;padding:7px 5px}.materialGrid{grid-template-columns:minmax(0,1fr) minmax(0,.85fr) minmax(0,.85fr);gap:6px}}@media(max-width:430px){
   .formGrid.two.compact{
     grid-template-columns:minmax(0,1.35fr) minmax(0,.65fr);
     gap:6px;
@@ -956,7 +1094,7 @@ select {
 input[type="date"]{
   padding-right:4px !important;
 }
-@media print{.topbar,.tabs,.actionsLine,.notice{display:none}.app{max-width:none}.panel{box-shadow:none}.tableWrap{overflow:visible}}
+@media print{.topbar,.tabs,.actionsLine,.notice,.footerBar,.headerReload,.filterTabs{display:none}.app{max-width:none}.panel{box-shadow:none}.tableWrap{overflow:visible}}
 `;
 
 export default App;
